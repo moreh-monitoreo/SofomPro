@@ -23,3 +23,5 @@ yarn-error.log
 /.vscode
 /.zed
 /docker
+# Llaves de cuentas de servicio de Firebase / Google Cloud
+*firebase-adminsdk*.json

@@ -57,7 +57,30 @@ return [
             'throw' => false,
         ],
 
+        // Firebase Storage (bucket de Google Cloud Storage). FIREBASE_CREDENTIALS acepta
+        // el JSON de la cuenta de servicio, el mismo JSON en base64 o la ruta al archivo.
+        'firebase' => [
+            'driver' => 'gcs',
+            'project_id' => env('FIREBASE_PROJECT_ID'),
+            'credentials' => env('FIREBASE_CREDENTIALS'),
+            'bucket' => env('FIREBASE_STORAGE_BUCKET'),
+            'prefix' => env('FIREBASE_STORAGE_PREFIX', ''),
+            'throw' => true,
+        ],
+
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Documents Disk
+    |--------------------------------------------------------------------------
+    |
+    | Disco donde se guardan los contratos generados y los documentos que se
+    | suben a cada préstamo. En producción se usa "firebase".
+    |
+    */
+
+    'documents' => env('DOCUMENTS_DISK', 'public'),
 
     /*
     |--------------------------------------------------------------------------

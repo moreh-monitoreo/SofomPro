@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use App\Actions\Global\Files\UploadFileAction;
 
@@ -234,7 +235,7 @@ class LoansController extends Controller
 
         foreach ($request->documents as $index => $document) {
             $name = $document->getClientOriginalName();
-            $path = (new UploadFileAction)->execute($document, 'loans', $name);
+            $path = (new UploadFileAction)->execute($document, "loans/{$loan->id}/uploads", $name);
 
             $document = $loan->documentations()->create([
                 'name' => $documentsName[$index],
@@ -250,5 +251,20 @@ class LoansController extends Controller
             'message' => 'Se han actualizado los documentos correctamente',
             'documents' => $uploadedDocuments,
         ]);
+    }
+
+    /** Abre un documento del préstamo; en Firebase el bucket es privado, así que se firma un enlace temporal. */
+    public function showDocument($id, $documentId)
+    {
+        $document = Loan::findOrFail($id)->documentations()->findOrFail($documentId);
+        $disk = Storage::disk(config('filesystems.documents'));
+
+        abort_unless($disk->exists($document->path), 404, 'El documento no se encuentra en el almacenamiento.');
+
+        if (config('filesystems.documents') === 'public') {
+            return redirect($disk->url($document->path));
+        }
+
+        return redirect($disk->temporaryUrl($document->path, now()->addMinutes(15)));
     }
 }

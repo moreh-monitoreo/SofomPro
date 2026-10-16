@@ -6,7 +6,7 @@ class UploadFileAction
 {
     public function execute($file, $path, $name)
     {
-        $path = $file->storeAs($path, $name, 'public');
+        $path = $file->storeAs($path, $name, config('filesystems.documents'));
 
         return $path;
     }

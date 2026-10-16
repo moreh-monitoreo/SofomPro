@@ -173,11 +173,9 @@ class GenerateLoanDocumentsAction
             throw new RuntimeException("No se encontró la plantilla {$template}");
         }
 
+        // Se arma en un archivo temporal y luego se sube al disco de documentos (Firebase en producción)
         $relative = "loans/{$loan->id}/generated/{$type}.docx";
-        $target = Storage::disk('public')->path($relative);
-        if (! is_dir(dirname($target))) {
-            mkdir(dirname($target), 0775, true);
-        }
+        $target = tempnam(sys_get_temp_dir(), 'doc');
         copy($source, $target);
 
         $zip = new ZipArchive();
@@ -213,6 +211,14 @@ class GenerateLoanDocumentsAction
 
         $zip->addFromString('word/document.xml', $dom->saveXML());
         $zip->close();
+
+        $stream = fopen($target, 'r');
+        try {
+            Storage::disk(config('filesystems.documents'))->put($relative, $stream);
+        } finally {
+            fclose($stream);
+            @unlink($target);
+        }
 
         return $loan->documentations()->updateOrCreate(
             ['type' => $type],

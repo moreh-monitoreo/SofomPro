@@ -479,7 +479,7 @@ async function updateDocuments() {
                                         No hay documentos guardados
                                     </div>
                                     <div v-else>
-                                        <a :href="`/storage/${documentation.path}`" target="_blank" v-for="documentation in loan.documentations" :key="documentation.id" class="cursor-pointer underline text-blue-600">
+                                        <a :href="route('loans.documents.show', [loan.id, documentation.id])" target="_blank" v-for="documentation in loan.documentations" :key="documentation.id" class="cursor-pointer underline text-blue-600">
                                             <li class="list-disc">{{ documentation.name }} ({{ documentation.type }})</li>
                                         </a>
                                     </div>

@@ -54,6 +54,7 @@ Route::middleware(['auth', 'role:Administrator|Advisor'])->group(function () {
     Route::get('loans/{id}/payments', [LoansController::class, 'payments'])->name('loans.payments.index')->where('id', '[0-9]+');
     Route::post('loans/{id}/payments', [LoansController::class, 'createpayments'])->name('loans.payments.store')->where('id', '[0-9]+');
     Route::post('loans/{id}/documents', [LoansController::class, 'documents'])->name('loans.documents.store')->where('id', '[0-9]+');
+    Route::get('loans/{id}/documents/{documentId}', [LoansController::class, 'showDocument'])->name('loans.documents.show')->whereNumber(['id', 'documentId']);
     Route::get('loans/{id}/plan-funerario', [LoansController::class, 'planFunerario'])->name('loans.plan-funerario')->where('id', '[0-9]+');
     Route::post('loans/{id}/account/password', [LoansController::class, 'resetAccountPassword'])->name('loans.account.password')->where('id', '[0-9]+');
     Route::get('loans/history', [LoansController::class, 'history'])->name('loans.history');
