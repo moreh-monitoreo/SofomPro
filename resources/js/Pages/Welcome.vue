@@ -87,10 +87,10 @@ document.querySelectorAll('.faq-question').forEach((question) => {
 
     <!-- Simulador de Préstamos -->
     <div
-        class="mt-[150px] flex h-[120vh] md:h-[80vh] w-full flex-col items-center lg:h-[80vh]"
+        class="mt-[150px] w-full px-4 py-16 md:py-24"
         style="background-image: url('/Fotos/texture.webp')"
     >
-        <div class="simulador container mx-auto mt-16 text-center">
+        <div class="simulador container mx-auto text-center">
             <h2 class="text-[32px] font-bold md:text-[40px] text-white">
                 Simulador de préstamos
             </h2>

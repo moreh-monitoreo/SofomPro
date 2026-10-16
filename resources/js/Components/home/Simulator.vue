@@ -1,22 +1,38 @@
 <script setup>
 import axios from 'axios';
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+
+const MIN_AMOUNT = 2000;
+const MAX_AMOUNT = 10000;
+const STEP = 1000;
 
 const loading = ref(false);
 const payment = ref(null);
 const annualRate = ref(null);
 const form = ref({
-    amountCredit: 2000,
+    amountCredit: MIN_AMOUNT,
     quantityPayments: 6,
     type: 'NORMAL',
 });
+
+const formatMoney = (value) =>
+    Number(value).toLocaleString('es-MX', { maximumFractionDigits: 0 });
+
+const amountLabel = computed(() => formatMoney(form.value.amountCredit));
+const sliderProgress = computed(
+    () =>
+        ((form.value.amountCredit - MIN_AMOUNT) / (MAX_AMOUNT - MIN_AMOUNT)) *
+        100,
+);
+
+// Si cambian los parámetros, el resultado anterior ya no aplica
+watch(form, () => (payment.value = null), { deep: true });
 
 function submitForm() {
     loading.value = true;
     axios
         .post(`/api/simulator`, { ...form.value })
         .then((response) => {
-            console.log(response.data);
             payment.value = response.data.payment;
             annualRate.value = response.data.annual_rate;
         })
@@ -28,148 +44,135 @@ function submitForm() {
         });
 }
 function subtractAmountCredit() {
-    if (form.value.amountCredit > 2000) {
-        form.value.amountCredit = parseInt(form.value.amountCredit) - 1000;
+    if (form.value.amountCredit > MIN_AMOUNT) {
+        form.value.amountCredit = parseInt(form.value.amountCredit) - STEP;
     }
 }
 function addAmountCredit() {
-    if (form.value.amountCredit < 10000) {
-        form.value.amountCredit = parseInt(form.value.amountCredit) + 1000;
+    if (form.value.amountCredit < MAX_AMOUNT) {
+        form.value.amountCredit = parseInt(form.value.amountCredit) + STEP;
     }
 }
 </script>
 <template>
-    <section class="border-b py-8">
-        <div class="container m-8 mx-auto max-w-5xl">
-            <form
-                action=""
-                id="formCreditSimulator"
-                @submit.prevent="submitForm"
+    <form
+        id="formCreditSimulator"
+        class="mx-auto mt-10 w-full max-w-3xl rounded-2xl bg-white p-6 text-left shadow-2xl md:p-10"
+        @submit.prevent="submitForm"
+    >
+        <!-- Monto -->
+        <p class="text-center text-xs font-bold uppercase tracking-wide text-gray-500">
+            ¿Cuánto necesitas?
+        </p>
+        <div class="mt-4 flex items-center justify-center gap-4 md:gap-8">
+            <button
+                type="button"
+                aria-label="Disminuir monto"
+                class="flex h-12 w-12 items-center justify-center rounded-full border-2 border-vermilion-500 text-vermilion-500 transition hover:bg-vermilion-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-vermilion-500"
+                :disabled="form.amountCredit <= MIN_AMOUNT"
+                @click="subtractAmountCredit"
             >
-                <div class="flex w-full flex-shrink flex-grow flex-col p-6">
-                    <div
-                        class="flex-1 overflow-hidden rounded-b-none rounded-t shadow"
-                    >
-                        <div
-                            class="flex flex-col md:flex-row w-full flex-wrap items-center justify-center gap-4"
-                        >
-                            <label
-                                class="w-full mb-2 block text-xs font-bold uppercase tracking-wide text-white"
-                                for="grid-state"
-                            >
-                                ¿Cuánto necesitas?
-                            </label>
-                            <button
-                                class="focus:shadow-outline z-10 mx-auto my-6 transform rounded-full bg-white px-4 py-2 md:px-8 md:py-4 font-bold text-vermilion-500 shadow-lg transition duration-300 ease-in-out hover:scale-105 focus:outline-none lg:mx-0"
-                                type="button"
-                                @click="subtractAmountCredit"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-dash" viewBox="0 0 16 16">
-                                    <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8"/>
-                                </svg>
-                            </button>
-                            <label class="text-4xl font-bold text-vermilion-500"
-                                >$ {{ form.amountCredit }}</label
-                            >
-                            <button
-                                class="focus:shadow-outline z-10 mx-auto my-6 transform rounded-full bg-white px-4 py-2 md:px-8 md:py-4 font-bold text-vermilion-500 shadow-lg transition duration-300 ease-in-out hover:scale-105 focus:outline-none lg:mx-0"
-                                type="button"
-                                @click="addAmountCredit"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-plus" viewBox="0 0 16 16">
-                                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="mx-auto w-1/2 justify-center">
-                            <input
-                                class="w-full"
-                                type="range"
-                                min="2000"
-                                max="10000"
-                                step="1000"
-                                id="amountCredit"
-                                v-model="form.amountCredit"
-                            />
-                        </div>
-                        <div
-                            class="mx-auto mb-6 mt-4 w-full px-3 md:mb-0 md:w-1/3"
-                        >
-                            <label
-                                class="mb-2 block text-xs font-bold uppercase tracking-wide text-white"
-                                for="loan-type"
-                            >
-                                Tipo de préstamo
-                            </label>
-                            <select
-                                id="loan-type"
-                                class="mb-4 block w-full appearance-none rounded border border-gray-200 bg-gray-200 px-4 py-3 pr-8 leading-tight text-gray-700 focus:border-gray-500 focus:bg-white focus:outline-none"
-                                v-model="form.type"
-                                @change="payment = null"
-                            >
-                                <option value="NORMAL">Préstamo personal</option>
-                                <option value="FUNERARIO">Préstamo con garantía (plan funerario)</option>
-                            </select>
-                            <label
-                                class="mb-2 block text-xs font-bold uppercase tracking-wide text-white"
-                                for="grid-state"
-                            >
-                                ¿A qué plazo quieres pagarlo?
-                            </label>
-                            <div class="relative">
-                                <select
-                                    class="block w-full appearance-none rounded border border-gray-200 bg-gray-200 px-4 py-3 pr-8 leading-tight text-gray-700 focus:border-gray-500 focus:bg-white focus:outline-none"
-                                    id="grid-state"
-                                    v-model="form.quantityPayments"
-                                >
-                                    <option value="6">6 Meses</option>
-                                    <option value="7">7 Meses</option>
-                                    <option value="8">8 Meses</option>
-                                    <option value="9">9 Meses</option>
-                                    <option value="10">10 Meses</option>
-                                    <option value="11">11 Meses</option>
-                                    <option value="12">12 Meses</option>
-                                </select>
-                                <div
-                                    class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700"
-                                >
-                                    <svg
-                                        class="h-4 w-4 fill-current"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 20 20"
-                                    >
-                                        <path
-                                            d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"
-                                        />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div
-                        class="mt-auto flex-none overflow-hidden rounded-b rounded-t-none p-6 shadow"
-                    >
-                        <div class="flex flex-wrap items-center justify-center">
-                            <a
-                                href=""
-                                v-if="payment != null"
-                                class="w-full text-center text-4xl font-bold text-vermilion-500"
-                                >$ {{ payment }} al mes.</a
-                            >
-                            <p v-if="payment != null" class="w-full text-center text-xs text-gray-600">
-                                Tasa ordinaria fija {{ annualRate }}% anual ({{ form.type === 'FUNERARIO' ? '6.19' : '6.63' }}% mensual sobre saldo insoluto). No incluye IVA sobre intereses.
-                            </p>
-                            <button
-                                type="submit"
-                                class="bg-white gradient focus:shadow-outline mx-auto my-6 transform rounded-full px-8 py-4 font-bold shadow-lg transition duration-300 ease-in-out hover:scale-105 hover:underline focus:outline-none lg:mx-0 text-vermilion-500"
-                                :disabled="loading"
-                            >
-                                Simular
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </form>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M4 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 4 8"/>
+                </svg>
+            </button>
+            <span class="min-w-[180px] text-center text-4xl font-extrabold text-vermilion-500 md:text-5xl">
+                ${{ amountLabel }}
+            </span>
+            <button
+                type="button"
+                aria-label="Aumentar monto"
+                class="flex h-12 w-12 items-center justify-center rounded-full border-2 border-vermilion-500 text-vermilion-500 transition hover:bg-vermilion-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-vermilion-500"
+                :disabled="form.amountCredit >= MAX_AMOUNT"
+                @click="addAmountCredit"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                </svg>
+            </button>
         </div>
-    </section>
+
+        <div class="mt-6">
+            <input
+                id="amountCredit"
+                v-model.number="form.amountCredit"
+                type="range"
+                :min="MIN_AMOUNT"
+                :max="MAX_AMOUNT"
+                :step="STEP"
+                class="h-2 w-full cursor-pointer appearance-none rounded-full accent-vermilion-500"
+                :style="{
+                    background: `linear-gradient(to right, #ff5a0a ${sliderProgress}%, #e5e7eb ${sliderProgress}%)`,
+                }"
+            />
+            <div class="mt-2 flex justify-between text-xs font-medium text-gray-500">
+                <span>${{ formatMoney(MIN_AMOUNT) }}</span>
+                <span>${{ formatMoney(MAX_AMOUNT) }}</span>
+            </div>
+        </div>
+
+        <!-- Tipo y plazo -->
+        <div class="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div>
+                <label
+                    for="loan-type"
+                    class="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500"
+                >
+                    Tipo de préstamo
+                </label>
+                <select
+                    id="loan-type"
+                    v-model="form.type"
+                    class="block w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 focus:border-vermilion-500 focus:ring-vermilion-500"
+                >
+                    <option value="NORMAL">Préstamo personal</option>
+                    <option value="FUNERARIO">Préstamo con garantía (plan funerario)</option>
+                </select>
+            </div>
+            <div>
+                <label
+                    for="loan-term"
+                    class="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-500"
+                >
+                    ¿A qué plazo quieres pagarlo?
+                </label>
+                <select
+                    id="loan-term"
+                    v-model.number="form.quantityPayments"
+                    class="block w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-gray-700 focus:border-vermilion-500 focus:ring-vermilion-500"
+                >
+                    <option v-for="months in [6, 7, 8, 9, 10, 11, 12]" :key="months" :value="months">
+                        {{ months }} meses
+                    </option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Resultado -->
+        <div class="mt-8 rounded-xl bg-vermilion-50 p-6 text-center">
+            <template v-if="payment != null">
+                <p class="text-xs font-bold uppercase tracking-wide text-gray-500">
+                    Tu pago mensual estimado
+                </p>
+                <p class="mt-2 text-4xl font-extrabold text-vermilion-500 md:text-5xl">
+                    ${{ payment }}
+                    <span class="text-lg font-bold text-gray-600">/ mes</span>
+                </p>
+                <p class="mt-3 text-xs text-gray-600">
+                    Tasa ordinaria fija {{ annualRate }}% anual ({{ form.type === 'FUNERARIO' ? '6.19' : '6.63' }}% mensual sobre saldo insoluto). No incluye IVA sobre intereses.
+                </p>
+            </template>
+            <p v-else class="text-sm text-gray-600">
+                Elige el monto, tipo y plazo, y presiona <strong>Simular</strong> para ver tu pago mensual.
+            </p>
+        </div>
+
+        <button
+            type="submit"
+            class="mt-6 w-full rounded-full bg-vermilion-500 px-8 py-4 text-base font-bold text-white shadow-lg transition hover:bg-vermilion-600 disabled:cursor-wait disabled:opacity-60"
+            :disabled="loading"
+        >
+            {{ loading ? 'Calculando…' : 'Simular' }}
+        </button>
+    </form>
 </template>
