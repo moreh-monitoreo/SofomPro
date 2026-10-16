@@ -129,6 +129,26 @@ async function validateLoan() {
     }
 }
 
+async function deleteDocument(documentation) {
+    const result = await Swal.fire({
+        title: '¿Eliminar documento?',
+        text: `Se eliminará "${documentation.name}" y no se podrá recuperar.`,
+        icon: 'warning',
+        showCancelButton: true,
+        cancelButtonText: 'Cancelar',
+        confirmButtonText: 'Sí, eliminar',
+        confirmButtonColor: '#dc2626',
+    });
+    if (!result.isConfirmed) return;
+    try {
+        const response = await axios.delete(route('loans.documents.destroy', [loan.value.id, documentation.id]));
+        loan.value.documentations = loan.value.documentations.filter((doc) => doc.id !== documentation.id);
+        toast.success(response.data.message);
+    } catch (error) {
+        toast.error(error.response?.data?.message || 'No se pudo eliminar el documento.');
+    }
+}
+
 async function updateDocuments() {
     if(documents.value.length == 0) {
         changeStep(4);
@@ -493,11 +513,19 @@ async function updateDocuments() {
                                     <div v-if="loan.documentations.length == 0">
                                         No hay documentos guardados
                                     </div>
-                                    <div v-else>
-                                        <a :href="route('loans.documents.show', [loan.id, documentation.id])" target="_blank" v-for="documentation in loan.documentations" :key="documentation.id" class="cursor-pointer underline text-blue-600">
-                                            <li class="list-disc">{{ documentation.name }} ({{ documentation.type }})</li>
-                                        </a>
-                                    </div>
+                                    <ul v-else class="list-disc space-y-1 pl-5">
+                                        <li v-for="documentation in loan.documentations" :key="documentation.id">
+                                            <a :href="route('loans.documents.show', [loan.id, documentation.id])" target="_blank" class="cursor-pointer text-blue-600 underline">
+                                                {{ documentation.name }} ({{ documentation.type }})
+                                            </a>
+                                            <button
+                                                type="button"
+                                                class="ml-3 text-sm text-red-600 hover:text-red-800 hover:underline"
+                                                @click="deleteDocument(documentation)">
+                                                Eliminar
+                                            </button>
+                                        </li>
+                                    </ul>
                                     <div class="space-y-4">
                                         <div class="rounded-lg border p-4">
                                             <h6 class="mb-4 text-lg font-medium text-gray-900">Documentos Requeridos</h6>

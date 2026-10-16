@@ -33,12 +33,20 @@ const removeDocument = (index) => {
 
 const updateDocument = (index, field, value) => {
     documents.value[index][field] = value;
+    if (field === 'name') {
+        documents.value[index].nameFromFile = false;
+    }
     emit('update:modelValue', documents.value);
 };
 
 const handleFileUpload = (index, files) => {
     if (files.length > 0) {
-        documents.value[index].file = files[0];
+        const doc = documents.value[index];
+        doc.file = files[0];
+        if (!doc.name?.trim() || doc.nameFromFile) {
+            doc.name = files[0].name.replace(/\.[^.]+$/, '');
+            doc.nameFromFile = true;
+        }
         emit('update:modelValue', documents.value);
     }
 };
@@ -87,16 +95,16 @@ onMounted(() => {
                 :multiple="false"
                 label="Arrastra y suelta el documento aquí"
             />
-            <Button
+            <button
                 type="button"
                 @click="removeDocument(index)"
                 class="mt-2 text-sm text-red-500 hover:text-red-700"
             >
                 Eliminar documento
-            </Button>
+            </button>
         </div>
 
-        <Button
+        <button
             type="button"
             @click="addDocument"
             class="inline-flex items-center rounded-lg bg-blue-700 px-5 py-2.5 text-center text-sm font-medium text-white hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-300"
@@ -105,6 +113,6 @@ onMounted(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
             </svg>
             Agregar Documento
-        </Button>
+        </button>
     </div>
 </template> 

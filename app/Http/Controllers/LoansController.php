@@ -272,6 +272,16 @@ class LoansController extends Controller
         ]);
     }
 
+    public function destroyDocument($id, $documentId)
+    {
+        $document = Loan::findOrFail($id)->documentations()->findOrFail($documentId);
+
+        Storage::disk(config('filesystems.documents'))->delete($document->path);
+        $document->delete();
+
+        return new JsonResponse(['message' => 'Documento eliminado correctamente']);
+    }
+
     /** Abre un documento del préstamo; en Firebase el bucket es privado, así que se firma un enlace temporal. */
     public function showDocument($id, $documentId)
     {
@@ -280,8 +290,8 @@ class LoansController extends Controller
 
         abort_unless($disk->exists($document->path), 404, 'El documento no se encuentra en el almacenamiento.');
 
-        if (config('filesystems.documents') === 'public') {
-            return redirect($disk->url($document->path));
+        if (config('filesystems.documents') !== 'firebase') {
+            return $disk->response($document->path);
         }
 
         return redirect($disk->temporaryUrl($document->path, now()->addMinutes(15)));

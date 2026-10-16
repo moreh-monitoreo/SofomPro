@@ -43,6 +43,7 @@ class DatabaseSeeder extends Seeder
             BillsSeeder::class,
             MainActivitiesSeeder::class,
             StatusesSeeder::class,
+            DocumentTypesSeeder::class,
         ]);
     }
 }
