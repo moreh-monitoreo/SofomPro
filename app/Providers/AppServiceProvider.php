@@ -52,7 +52,7 @@ class AppServiceProvider extends ServiceProvider
         });
     }
 
-    /** Acepta el JSON de la cuenta de servicio, el JSON en base64 o la ruta al archivo. */
+    /** Acepta el JSON de la cuenta de servicio, el JSON en base64 o la ruta al archivo (absoluta o relativa al proyecto). */
     private static function gcsCredentials(?string $value): ?array
     {
         if (blank($value)) {
@@ -60,9 +60,11 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $value = trim($value);
+        $isPath = strlen($value) < 1024;
         $json = match (true) {
             str_starts_with($value, '{') => $value,
-            is_file($value) => file_get_contents($value),
+            $isPath && is_file($value) => file_get_contents($value),
+            $isPath && is_file(base_path($value)) => file_get_contents(base_path($value)),
             default => base64_decode($value, true),
         };
 
