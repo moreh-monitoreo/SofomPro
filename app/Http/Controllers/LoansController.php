@@ -228,6 +228,25 @@ class LoansController extends Controller
     {
         $loan = Loan::findOrFail($id);
 
+        $request->validate([
+            'documents' => 'required|array|min:1',
+            'documents.*' => 'required|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:5120',
+            'documentsname' => 'required|array',
+            'documentsname.*' => 'required|string|max:255',
+            'documentstype' => 'required|array',
+            'documentstype.*' => 'required|string|max:255|not_in:null,undefined',
+        ], [
+            'documents.required' => 'Agrega al menos un documento.',
+            'documents.*.required' => 'Falta seleccionar el archivo del documento #:position.',
+            'documents.*.uploaded' => 'El documento #:position no se pudo subir; revisa que no pese más de 5 MB.',
+            'documents.*.file' => 'El documento #:position no se pudo subir; revisa que no pese más de 5 MB.',
+            'documents.*.mimes' => 'El documento #:position debe ser PDF, DOC, DOCX, JPG o PNG.',
+            'documents.*.max' => 'El documento #:position pesa más de 5 MB.',
+            'documentsname.*.required' => 'Escribe el nombre del documento #:position.',
+            'documentstype.*.required' => 'Selecciona el tipo del documento #:position.',
+            'documentstype.*.not_in' => 'Selecciona el tipo del documento #:position.',
+        ]);
+
         $uploadedDocuments = [];
 
         $documentsName = $request->documentsname;

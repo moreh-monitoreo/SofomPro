@@ -134,6 +134,13 @@ async function updateDocuments() {
         changeStep(4);
         return;
     }
+    const missing = documents.value.findIndex((doc) => !doc.file || !doc.type || !doc.name?.trim());
+    if (missing !== -1) {
+        const doc = documents.value[missing];
+        const field = !doc.type ? 'el tipo' : !doc.name?.trim() ? 'el nombre' : 'el archivo';
+        toast.error(`Falta ${field} del documento #${missing + 1}.`);
+        return;
+    }
     try {
         const formData = new FormData();
         documents.value.forEach((document) => {
@@ -143,9 +150,17 @@ async function updateDocuments() {
         });
         const response = await axios.post(`/loans/${loan.value.id}/documents`, formData);
         toast.success(response.data.message);
+        loan.value.documentations.push(...response.data.documents);
+        documents.value.splice(0); // mismo arreglo que usa DocumentUpload, para que también se limpie
         changeStep(4);
     } catch (error) {
-        toast.error(error);
+        const errors = error.response?.data?.errors;
+        const message = errors
+            ? Object.values(errors).flat()[0]
+            : error.response?.status === 413
+              ? 'Los archivos pesan demasiado para el servidor.'
+              : error.response?.data?.message || 'No se pudieron guardar los documentos.';
+        toast.error(message);
     }
 }
 </script>
