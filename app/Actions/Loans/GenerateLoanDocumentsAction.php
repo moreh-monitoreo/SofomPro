@@ -216,7 +216,9 @@ class GenerateLoanDocumentsAction
         try {
             Storage::disk(config('filesystems.documents'))->put($relative, $stream);
         } finally {
-            fclose($stream);
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
             @unlink($target);
         }
 
