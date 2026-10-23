@@ -7,6 +7,8 @@ use App\Actions\Loans\CreateCustomerAccountAction;
 use App\Actions\Loans\GenerateLoanDocumentsAction;
 use App\Services\MorehContractService;
 use App\Models\Loan;
+use App\Models\LoanProduct;
+use App\Services\LoanPortfolio;
 use App\Models\Payment;
 use App\Models\PaymentDetail;
 use App\Models\User;
@@ -71,7 +73,10 @@ class LoansController extends Controller
 
     public function update(Request $request, $id, CreateCustomerAccountAction $createAccount, GenerateLoanDocumentsAction $generateDocuments)
     {
-        $request->validate(['status' => 'required|in:accepted,rejected']);
+        $request->validate([
+            'status' => 'required|in:accepted,rejected',
+            'reason' => 'nullable|string|max:500',
+        ]);
 
         $loan = Loan::with('customer')->findOrFail($id);
 
@@ -80,21 +85,42 @@ class LoansController extends Controller
         }
 
         if ($request->status == 'rejected') {
-            $loan->update(['reject_at' => now()]);
+            $loan->update(['reject_at' => now(), 'reject_reason' => $request->reason]);
 
             return new JsonResponse(['loan' => $loan, 'message' => 'La solicitud fue rechazada']);
         }
+
+        // Condiciones aprobadas: por defecto las solicitadas; el equipo puede aprobar otro monto o plazo dentro de los límites del producto
+        $product = LoanProduct::forType($loan->type);
+        $request->validate([
+            'amount' => "nullable|numeric|min:{$product->min_amount}|max:{$product->max_amount}",
+            'term' => "nullable|integer|min:{$product->min_term}|max:{$product->max_term}",
+        ], [
+            'amount.min' => 'El monto mínimo del producto es de $'.number_format($product->min_amount).'.',
+            'amount.max' => 'El monto máximo del producto es de $'.number_format($product->max_amount).'.',
+            'term.min' => "El plazo mínimo del producto es de {$product->min_term} meses.",
+            'term.max' => "El plazo máximo del producto es de {$product->max_term} meses.",
+        ]);
 
         if (! $loan->customer?->email) {
             return new JsonResponse(['message' => 'El cliente no tiene correo registrado para crear su cuenta'], 422);
         }
 
+        $adjustments = [];
+        if ($request->filled('amount') && round((float) $request->amount, 2) !== round((float) $loan->amount, 2)) {
+            $adjustments += ['requested_amount' => $loan->amount, 'amount' => $request->amount];
+        }
+        if ($request->filled('term') && (int) $request->term !== (int) $loan->term) {
+            $adjustments += ['requested_term' => $loan->term, 'term' => (int) $request->term];
+        }
+
         try {
-            DB::transaction(function () use ($loan, $createAccount, $generateDocuments) {
+            DB::transaction(function () use ($loan, $createAccount, $generateDocuments, $adjustments, $request) {
                 $loan->update([
                     'approved_at' => now(),
                     'start_at' => Carbon::now()->addMonth()->firstOfMonth(),
-                ]);
+                    'approved_by' => $request->user()->id,
+                ] + $adjustments);
 
                 // 1. Cuenta del cliente, 2. Contratos y anexos según el tipo de préstamo
                 $createAccount->handle($loan->customer);
@@ -107,30 +133,6 @@ class LoansController extends Controller
         }
 
         return new JsonResponse(['loan' => $loan->fresh(), 'message' => 'La solicitud fue aprobada, se creó la cuenta del cliente y su documentación']);
-    }
-
-    /** Consulta en la tabla de contratos de MOREH el plan funerario registrado como garantía. */
-    public function planFunerario($id, MorehContractService $moreh)
-    {
-        $loan = Loan::findOrFail($id);
-
-        if ($loan->type !== 'FUNERARIO' || ! $loan->policy_folio) {
-            return new JsonResponse(['message' => 'Este préstamo no tiene un Plan Funerario como garantía'], 422);
-        }
-
-        $result = $moreh->findByFolio($loan->policy_folio);
-
-        return new JsonResponse($result['body'], $result['status']);
-    }
-
-    public function payments($id)
-    {
-        $loan = Loan::with('payment.details', 'customer')->findOrFail($id);
-
-        return Inertia::render('Payments/PaymentsView', [
-            'loan' => $loan,
-            'message' => session('message'),
-        ]);
     }
 
     public function createpayments(Request $request, $id, CreateQuotationTableAction $createQuotationTableAction, GenerateLoanDocumentsAction $generateDocuments)
@@ -148,7 +150,7 @@ class LoansController extends Controller
         $startDate = new Carbon($request->start_date ?? null);
         $years = $request->filled('months') ? $request->months / 12 : $request->years;
 
-        $paymentTable = $createQuotationTableAction->handle($request->amount, $years, $request->opening_fees, $request->annual_rate);
+        $paymentTable = $createQuotationTableAction->handle($request->amount, $years, $request->opening_fees, $request->annual_rate, LoanProduct::forType($loan->type)->iva / 100);
 
         // "Generar plan" solo calcula; "Guardar plan" lo persiste
         if (! filter_var($request->willSave, FILTER_VALIDATE_BOOLEAN)) {
@@ -171,8 +173,9 @@ class LoansController extends Controller
             'loan_id' => $loan->id,
             'request_amount' => $request->amount,
             'payment_amount' => $paymentTable['to_pay_simple_interest'],
-            'cat_type' => $paymentTable['type'],
-            'cat_amount' => $paymentTable['CAT_simple_interest'],
+            'cat_type' => 'irr',
+            'cat_amount' => $paymentTable['cat_con_iva'] / 100,
+            'cat_sin_iva' => $paymentTable['cat_sin_iva'] / 100,
             'total_months' => $paymentTable['total_months'],
             'month_rate' => $paymentTable['month_rate'],
             'opening_fees' => $paymentTable['opening_fees'],
@@ -180,13 +183,14 @@ class LoansController extends Controller
         ]);
 
         foreach ($paymentTable['payments'] as $index => $pay) {
-            $newDate = $startDate->addMonth();
+            $newDate = $startDate->copy()->addMonthsNoOverflow($index + 1);
 
             $payment->details->push(PaymentDetail::create([
                 'payment_id' => $payment->id,
                 'number' => $index + 1,
                 'month' => $newDate->format('m'),
                 'year' => $newDate->year,
+                'due_date' => $newDate->toDateString(),
                 'interest_payment' => $pay['interest_payment'],
                 'principal_payment' => $pay['principal_payment'],
                 'balance' => $pay['balance'],

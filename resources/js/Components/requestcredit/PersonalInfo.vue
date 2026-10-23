@@ -104,17 +104,20 @@
                         Fecha de Nacimiento
                         <span class="text-red-500">*</span>
                     </label>
-                    <Datepicker
+                    <input
                         v-model="form.birthday"
-                        calendar-class="w-full"
-                        format="yyyy-MM-dd"
+                        type="date"
+                        :min="minBirthday"
+                        :max="maxBirthday"
+                        autocomplete="bday"
                         :class="[
                             'mt-1 block w-full rounded-md shadow-sm transition-colors duration-200',
                             errors.birthday
                                 ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
                                 : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500',
                         ]"
-                        @selected="onSelectedDate"
+                        @change="validateField('birthday')"
+                        @blur="validateField('birthday')"
                     />
                     <span v-if="errors.birthday" class="mt-1 text-sm text-red-600">{{ errors.birthday }}</span>
                 </div>
@@ -250,6 +253,39 @@
                 </div>
             </div>
 
+            <div class="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-4">
+                <label class="flex items-start gap-3 text-sm text-gray-700">
+                    <input
+                        v-model="form.accept_privacy"
+                        type="checkbox"
+                        class="mt-1 rounded border-gray-300 text-vermilion-500 focus:ring-vermilion-500"
+                        @change="validateField('accept_privacy')"
+                    />
+                    <span>
+                        He leído y acepto el
+                        <a :href="route('site.privacy')" target="_blank" class="font-semibold text-vermilion-500 underline">Aviso de Privacidad</a>.
+                        <span class="text-red-500">*</span>
+                    </span>
+                </label>
+                <span v-if="errors.accept_privacy" class="block text-sm text-red-600">{{ errors.accept_privacy }}</span>
+
+                <label class="flex items-start gap-3 text-sm text-gray-700">
+                    <input
+                        v-model="form.authorize_credit_check"
+                        type="checkbox"
+                        class="mt-1 rounded border-gray-300 text-vermilion-500 focus:ring-vermilion-500"
+                        @change="validateField('authorize_credit_check')"
+                    />
+                    <span>
+                        Autorizo la consulta de mis datos en Sociedades de Información Crediticia (Buró de Crédito y Círculo de Crédito),
+                        como se explica en la sección 4 del
+                        <a :href="route('site.privacy')" target="_blank" class="font-semibold text-vermilion-500 underline">Aviso de Privacidad</a>.
+                        <span class="text-red-500">*</span>
+                    </span>
+                </label>
+                <span v-if="errors.authorize_credit_check" class="block text-sm text-red-600">{{ errors.authorize_credit_check }}</span>
+            </div>
+
             <div class="flex justify-end mt-4">
                 <button
                     type="button"
@@ -265,8 +301,12 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue';
-import Datepicker from 'vuejs3-datepicker';
 import { useRequestCreditStore } from '@/stores/requestCredit';
+
+const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const today = new Date();
+const maxBirthday = isoDate(new Date(today.getFullYear() - 18, today.getMonth(), today.getDate()));
+const minBirthday = '1900-01-01';
 
 const store = useRequestCreditStore();
 const form = ref({ ...store.personalInfo });
@@ -296,10 +336,18 @@ const validateField = (field) => {
         case 'last_name':
         case 'maiden_name':
         case 'gender':
-        case 'birthday':
         case 'state':
             if (!form.value[field]) {
                 errors.value[field] = 'Este campo es requerido';
+            }
+            break;
+        case 'birthday':
+            if (!form.value.birthday) {
+                errors.value.birthday = 'Este campo es requerido';
+            } else if (form.value.birthday > maxBirthday) {
+                errors.value.birthday = 'Debes ser mayor de edad para solicitar un préstamo';
+            } else if (form.value.birthday < minBirthday) {
+                errors.value.birthday = 'La fecha no es válida';
             }
             break;
         case 'email':
@@ -314,6 +362,16 @@ const validateField = (field) => {
                 errors.value.phone = 'El teléfono es requerido';
             } else if (!/^[0-9]{10}$/.test(form.value.phone)) {
                 errors.value.phone = 'El teléfono debe tener 10 dígitos';
+            }
+            break;
+        case 'accept_privacy':
+            if (!form.value.accept_privacy) {
+                errors.value.accept_privacy = 'Debes aceptar el Aviso de Privacidad para continuar';
+            }
+            break;
+        case 'authorize_credit_check':
+            if (!form.value.authorize_credit_check) {
+                errors.value.authorize_credit_check = 'Debes autorizar la consulta en Sociedades de Información Crediticia para continuar';
             }
             break;
         case 'rfc':
@@ -340,7 +398,7 @@ const validateField = (field) => {
 };
 
 const validateForm = () => {
-    const requiredFields = ['name', 'last_name', 'maiden_name', 'gender', 'birthday', 'rfc', 'curp', 'state', 'email', 'phone'];
+    const requiredFields = ['name', 'last_name', 'maiden_name', 'gender', 'birthday', 'rfc', 'curp', 'state', 'email', 'phone', 'accept_privacy', 'authorize_credit_check'];
     requiredFields.forEach(field => validateField(field));
     return !Object.values(errors.value).some(error => error !== '');
 };
@@ -355,18 +413,6 @@ const handleSubmit = async () => {
     }
 };
 
-const onSelectedDate = (date) => {
-    if (date) {
-        // Convertir la fecha a string en formato YYYY-MM-DD sin considerar la zona horaria
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        form.value.birthday = `${year}-${month}-${day}`;
-    } else {
-        form.value.birthday = null;
-    }
-    validateField('birthday');
-};
 </script>
 
 <style scoped>

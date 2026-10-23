@@ -158,7 +158,7 @@ import { Head } from '@inertiajs/vue3';
                     Nos diferenciamos por nuestra atención personalizada y un equipo experto que te acompañará en todo el proceso. Nos enorgullece brindar un servicio que inspira confianza y seguridad.
                 </p>
                 <a
-                    href="prestamo-personal.html"
+                    :href="route('site.personalloan')"
                     class="rounded-full bg-primary px-8 py-4 text-[14px] font-bold text-white"
                     >Conoce nuestros servicios</a
                 >

@@ -1,156 +1,138 @@
 <template>
     <div class="space-y-6">
-        <h2 class="text-lg font-medium text-gray-900">Información Personal</h2>
+        <div>
+            <h2 class="text-lg font-medium text-gray-900">Documentos</h2>
+            <p class="mt-1 text-sm text-gray-600">
+                Sube una foto o PDF legible de cada documento. Formatos: PDF, JPG o PNG, máximo 5 MB por archivo.
+                Tus documentos se guardan en un almacenamiento seguro y solo los revisa nuestro equipo.
+            </p>
+        </div>
 
-        <form @submit.prevent="saveAndContinue" class="space-y-4">
-            <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div>
-                    <label
-                        for="firstName"
-                        class="block text-sm font-medium text-gray-700"
-                    >
-                        Nombres
-                    </label>
-                    <input
-                        id="firstName"
-                        v-model="form.firstName"
-                        type="text"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                    <p
-                        v-if="errors.firstName"
-                        class="mt-1 text-sm text-red-600"
-                    >
-                        {{ errors.firstName }}
-                    </p>
-                </div>
+        <form class="space-y-4" @submit.prevent="handleSubmit">
+            <div
+                v-for="doc in documents"
+                :key="doc.field"
+                :class="[
+                    'rounded-lg border p-4 transition-colors',
+                    errors[doc.field] ? 'border-red-300 bg-red-50' : 'border-gray-200',
+                ]"
+            >
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-900">
+                            {{ doc.label }}
+                            <span class="text-red-500">*</span>
+                        </p>
+                        <p class="text-xs text-gray-500">{{ doc.hint }}</p>
+                    </div>
 
-                <div>
-                    <label
-                        for="lastName"
-                        class="block text-sm font-medium text-gray-700"
-                    >
-                        Apellidos
-                    </label>
-                    <input
-                        id="lastName"
-                        v-model="form.lastName"
-                        type="text"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                    <p v-if="errors.lastName" class="mt-1 text-sm text-red-600">
-                        {{ errors.lastName }}
-                    </p>
+                    <div class="flex items-center gap-3">
+                        <template v-if="files[doc.field]">
+                            <span class="max-w-[220px] truncate text-sm text-gray-700" :title="files[doc.field].name">
+                                {{ files[doc.field].name }}
+                                <span class="text-xs text-gray-500">({{ size(files[doc.field]) }})</span>
+                            </span>
+                            <button
+                                type="button"
+                                class="text-sm text-red-600 hover:underline"
+                                @click="remove(doc.field)"
+                            >
+                                Quitar
+                            </button>
+                        </template>
+                        <label
+                            v-else
+                            class="cursor-pointer rounded-md border border-vermilion-500 px-3 py-2 text-sm font-medium text-vermilion-500 hover:bg-vermilion-50"
+                        >
+                            Elegir archivo
+                            <input
+                                type="file"
+                                class="sr-only"
+                                accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf"
+                                @change="pick(doc.field, $event)"
+                            />
+                        </label>
+                    </div>
                 </div>
+                <p v-if="errors[doc.field]" class="mt-2 text-sm text-red-600">{{ errors[doc.field] }}</p>
+            </div>
 
-                <div>
-                    <label
-                        for="email"
-                        class="block text-sm font-medium text-gray-700"
-                    >
-                        Correo Electrónico
-                    </label>
-                    <input
-                        id="email"
-                        v-model="form.email"
-                        type="email"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                    <p v-if="errors.email" class="mt-1 text-sm text-red-600">
-                        {{ errors.email }}
-                    </p>
-                </div>
-
-                <div>
-                    <label
-                        for="phone"
-                        class="block text-sm font-medium text-gray-700"
-                    >
-                        Teléfono
-                    </label>
-                    <input
-                        id="phone"
-                        v-model="form.phone"
-                        type="tel"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    />
-                    <p v-if="errors.phone" class="mt-1 text-sm text-red-600">
-                        {{ errors.phone }}
-                    </p>
-                </div>
+            <div class="flex justify-between pt-2">
+                <button
+                    type="button"
+                    class="rounded-md bg-gray-500 px-4 py-2 text-white transition-colors duration-200 hover:bg-gray-600"
+                    :disabled="store.isSubmitting"
+                    @click="store.previousStep()"
+                >
+                    Anterior
+                </button>
+                <button
+                    type="submit"
+                    class="rounded-md bg-vermilion-500 px-4 py-2 text-white transition-colors duration-200 hover:bg-vermilion-600 disabled:cursor-wait disabled:opacity-60"
+                    :disabled="store.isSubmitting"
+                >
+                    {{ store.isSubmitting ? 'Enviando documentos…' : 'Enviar solicitud' }}
+                </button>
             </div>
         </form>
     </div>
 </template>
 
-<script>
-import { onMounted, ref, watch } from 'vue';
+<script setup>
+import { useRequestCreditStore } from '@/stores/requestCredit';
+import { ref } from 'vue';
 
-export default {
-    props: {
-        formData: {
-            type: Object,
-            required: true,
-        },
-    },
+const MAX_BYTES = 5 * 1024 * 1024;
+const ALLOWED = ['application/pdf', 'image/jpeg', 'image/png'];
 
-    emits: ['update-form', 'save-step'],
+const store = useRequestCreditStore();
 
-    setup(props, { emit }) {
-        const form = ref({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-        });
-        const errors = ref({});
+const documents = [
+    { field: 'ine_front', label: 'INE por el frente', hint: 'Foto clara donde se lea toda la información.' },
+    { field: 'ine_back', label: 'INE por el reverso', hint: 'Asegúrate de que se vea el código de barras.' },
+    { field: 'proof_of_address', label: 'Comprobante de domicilio', hint: 'Recibo de luz, agua, teléfono o predial con antigüedad máxima de 3 meses.' },
+    { field: 'bank_statement', label: 'Estado de cuenta bancario', hint: 'Del último mes, donde aparezca tu nombre.' },
+];
 
-        // Cargar datos existentes si los hay
-        onMounted(() => {
-            if (props.formData.personal) {
-                form.value = { ...props.formData.personal };
-            }
-        });
+const files = ref({});
+const errors = ref({});
 
-        // Actualizar datos del formulario principal cuando cambie el formulario local
-        watch(
-            form,
-            (newValue) => {
-                emit('update-form', newValue, 'documents');
-            },
-            { deep: true },
-        );
+const size = (file) => `${(file.size / 1024 / 1024).toFixed(2)} MB`;
 
-        const validate = () => {
-            errors.value = {};
+const pick = (field, event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
 
-            if (!form.value.firstName) {
-                errors.value.firstName = 'El nombre es requerido';
-            }
-            if (!form.value.lastName) {
-                errors.value.lastName = 'El apellido es requerido';
-            }
-            if (!form.value.email) {
-                errors.value.email = 'El correo es requerido';
-            }
-            if (!form.value.phone) {
-                errors.value.phone = 'El teléfono es requerido';
-            }
+    errors.value[field] = '';
+    if (!ALLOWED.includes(file.type)) {
+        errors.value[field] = 'El archivo debe ser PDF, JPG o PNG.';
+        return;
+    }
+    if (file.size > MAX_BYTES) {
+        errors.value[field] = `El archivo pesa ${size(file)} y el máximo es 5 MB.`;
+        return;
+    }
+    files.value[field] = file;
+};
 
-            return Object.keys(errors.value).length === 0;
-        };
+const remove = (field) => {
+    delete files.value[field];
+};
 
-        const saveAndContinue = () => {
-            if (validate()) {
-                emit('save-step');
-            }
-        };
+const handleSubmit = async () => {
+    errors.value = {};
+    documents.forEach(({ field, label }) => {
+        if (!files.value[field]) {
+            errors.value[field] = `Falta subir: ${label}.`;
+        }
+    });
 
-        return {
-            form,
-            errors,
-            saveAndContinue,
-        };
-    },
+    if (Object.values(errors.value).some(Boolean)) {
+        store.setErrors({ submit: 'Sube los cuatro documentos para enviar tu solicitud.' });
+        return;
+    }
+
+    await store.sendDocuments(files.value);
 };
 </script>

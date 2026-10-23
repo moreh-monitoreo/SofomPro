@@ -25,14 +25,18 @@
                     label="Monto del préstamo"
                     required
                     :error="errors.amount"
+                    :help-text="amountHint"
                     type="number"
+                    @focusout="validateField('amount')"
                 />
                 <FormInput
                     v-model="form.term"
                     label="Plazo en meses para pagar"
                     required
                     :error="errors.term"
+                    :help-text="termHint"
                     type="number"
+                    @focusout="validateField('term')"
                 />
                 <div>
                     <label class="block text-sm font-medium text-gray-700">
@@ -104,6 +108,7 @@
 </template>
 
 <script>
+import axios from 'axios';
 import { computed, onMounted, ref, watch } from 'vue';
 import FormInput from '../FormInput.vue';
 import { Switch } from '@/Components/ui/switch';
@@ -126,10 +131,20 @@ export default {
         const form = ref({ ...requestCreditStore.loanInfo });
         const errors = ref({});
 
+        // Límites vigentes de cada producto (los mismos que usa el simulador); el servidor vuelve a validarlos
+        const products = ref({});
+        const money = (value) => `$${Number(value).toLocaleString('es-MX')}`;
+
         // Cargar datos existentes si los hay
-        onMounted(() => {
+        onMounted(async () => {
             if (requestCreditStore.loanInfo) {
                 form.value = { ...requestCreditStore.loanInfo };
+            }
+            try {
+                const { data } = await axios.get('/api/simulator/config');
+                products.value = data.products;
+            } catch {
+                // Sin la configuración solo se omiten los avisos; el servidor valida igual
             }
         });
 
@@ -151,6 +166,17 @@ export default {
             }
         };
 
+        const limits = computed(() => products.value[hasPolicy.value ? 'FUNERARIO' : 'NORMAL'] ?? null);
+
+        const amountHint = computed(() => {
+            const p = limits.value;
+            return p ? `Entre ${money(p.min_amount)} y ${money(p.max_amount)}, en múltiplos de ${money(p.amount_step)}.` : '';
+        });
+        const termHint = computed(() => {
+            const p = limits.value;
+            return p ? `Entre ${p.min_term} y ${p.max_term} meses.` : '';
+        });
+
         const validateField = (field) => {
             errors.value[field] = '';
 
@@ -160,16 +186,32 @@ export default {
                         errors.value[field] = 'El folio del Plan Funerario es requerido';
                     }
                     break;
-                case 'amount':
-                    if (!form.value[field] || Number(form.value[field]) <= 0) {
+                case 'amount': {
+                    const amount = Number(form.value.amount);
+                    const p = limits.value;
+                    if (!form.value.amount || amount <= 0) {
                         errors.value[field] = 'Ingresa un monto mayor a 0';
+                    } else if (p && amount < p.min_amount) {
+                        errors.value[field] = `El monto mínimo es de ${money(p.min_amount)}`;
+                    } else if (p && amount > p.max_amount) {
+                        errors.value[field] = `El monto máximo es de ${money(p.max_amount)}`;
+                    } else if (p && (amount - p.min_amount) % p.amount_step !== 0) {
+                        errors.value[field] = `El monto debe ser múltiplo de ${money(p.amount_step)}`;
                     }
                     break;
-                case 'term':
-                    if (!form.value[field] || Number(form.value[field]) < 1) {
+                }
+                case 'term': {
+                    const term = Number(form.value.term);
+                    const p = limits.value;
+                    if (!form.value.term || term < 1) {
                         errors.value[field] = 'Ingresa un plazo de al menos 1 mes';
+                    } else if (p && (term < p.min_term || term > p.max_term)) {
+                        errors.value[field] = `El plazo debe estar entre ${p.min_term} y ${p.max_term} meses`;
+                    } else if (!Number.isInteger(term)) {
+                        errors.value[field] = 'El plazo debe ser en meses completos';
                     }
                     break;
+                }
                 case 'purpose':
                     if (!form.value[field]) {
                         errors.value[field] = 'Este campo es requerido';
@@ -205,6 +247,8 @@ export default {
             form,
             errors,
             hasPolicy,
+            amountHint,
+            termHint,
             setPolicy,
             validateField,
             handleSubmit,

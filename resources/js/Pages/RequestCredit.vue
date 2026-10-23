@@ -2,6 +2,7 @@
 import AddressInfo from '@/Components/requestcredit/Address.vue';
 import CivilInfo from '@/Components/requestcredit/CivilInfo.vue';
 import Employment from '@/Components/requestcredit/Employment.vue';
+import Documents from '@/Components/requestcredit/Documents.vue';
 import EmploymentDetails from '@/Components/requestcredit/EmploymentDetails.vue';
 import Loan from '@/Components/requestcredit/Loan.vue';
 import PersonalInfo from '@/Components/requestcredit/PersonalInfo.vue';
@@ -24,6 +25,7 @@ export default {
         Employment,
         EmploymentDetails,
         Loan,
+        Documents,
         RequestFinished,
     },
 
@@ -213,6 +215,9 @@ export default {
                             <Loan />
                         </div>
                         <div v-else-if="store.currentStep === 6">
+                            <Documents />
+                        </div>
+                        <div v-else-if="store.currentStep === 7">
                             <RequestFinished />
                         </div>
                     </div>

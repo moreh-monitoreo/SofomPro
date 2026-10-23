@@ -24,6 +24,9 @@ import {
     Trash2,
     FileText,
     HandCoins,
+    Percent,
+    KanbanSquare,
+    AlertTriangle,
 } from 'lucide-vue-next';
 import { usePage } from '@inertiajs/vue3';
 import { hasAccess } from '@/lib/auth';
@@ -112,6 +115,18 @@ const page = usePage();
                         </a>
                     </SidebarMenuButton>
                     <SidebarMenuButton as-child>
+                        <a :href="route('pipeline.index')">
+                            <KanbanSquare />
+                            <span>Pipeline</span>
+                        </a>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton as-child>
+                        <a :href="route('portfolio.overdue')">
+                            <AlertTriangle />
+                            <span>Cartera vencida</span>
+                        </a>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton as-child>
                         <a :href="route('loans.history')">
                             <History />
                             <span>Historial Préstamos</span>
@@ -146,6 +161,12 @@ const page = usePage();
                         <a :href="route('document-types.index')">
                             <History />
                             <span>Tipos de Documentos</span>
+                        </a>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton v-if="hasAccess(['Administrator'], page.props.auth.roles)" as-child>
+                        <a :href="route('admin.loan-products.index')">
+                            <Percent />
+                            <span>Productos y tasas</span>
                         </a>
                     </SidebarMenuButton>
                 </SidebarMenuItem>

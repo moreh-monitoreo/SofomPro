@@ -18,6 +18,8 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         state: '',
         email: '',
         phone: '',
+        accept_privacy: false,
+        authorize_credit_check: false,
     });
 
     const addressInfo = ref({
@@ -48,6 +50,7 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         imss: '',
         insurance_major_medical_expenses: '',
         monthly_income: '',
+        monthly_expenses: '',
         other_income: '',
     });
 
@@ -66,7 +69,7 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
 
     // Estado de la navegación
     const currentStep = ref(1);
-    const totalSteps = 6;
+    const totalSteps = 7;
     const isSubmitting = ref(false);
     const errors = ref({});
     const customerId = ref(null);
@@ -199,6 +202,18 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
             },
         );
 
+    const sendDocuments = (files) => {
+        const payload = new FormData();
+        Object.entries(files).forEach(([field, file]) => payload.append(field, file));
+
+        return submitStep(
+            `/request-credit/customer/${customerId.value}/documents`,
+            payload,
+            201,
+            () => {},
+        );
+    };
+
     const nextStep = async () => {
         if (!canProceed.value) return false;
         
@@ -243,6 +258,8 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
             state: '',
             email: '',
             phone: '',
+            accept_privacy: false,
+            authorize_credit_check: false,
         };
         addressInfo.value = {
             street: '',
@@ -272,6 +289,7 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
             imss: '',
             insurance_major_medical_expenses: '',
             monthly_income: '',
+            monthly_expenses: '',
             other_income: '',
         };
         loanInfo.value = {
@@ -322,5 +340,6 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         sendCivilInfo,
         sendEmploymentInfo,
         sendLoanInfo,
+        sendDocuments,
     };
 }); 

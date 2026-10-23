@@ -34,12 +34,17 @@ class RegisteredUserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'accept_privacy' => 'accepted',
+        ], [
+            'accept_privacy.accepted' => 'Debes aceptar el Aviso de Privacidad y autorizar la consulta en Sociedades de Información Crediticia para registrarte.',
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'privacy_accepted_at' => now(),
+            'consent_version' => config('promas.consent_version'),
         ]);
 
         event(new Registered($user));

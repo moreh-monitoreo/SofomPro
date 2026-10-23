@@ -4,6 +4,7 @@ namespace App\Actions\Loans;
 
 use App\Actions\CreateQuotationTableAction;
 use App\Models\Loan;
+use App\Models\LoanProduct;
 use Carbon\Carbon;
 use DOMDocument;
 use DOMElement;
@@ -27,7 +28,14 @@ class GenerateLoanDocumentsAction
     public const ANNUAL_RATE_PERSONAL = 79.56;
     public const DEFAULT_OPENING_FEE = 3;
 
+    /** Tasa anual vigente del producto (configurable en el panel de administración). */
     public static function annualRate(?string $type): float
+    {
+        return LoanProduct::forType($type)->annual_rate;
+    }
+
+    /** Tasa anual que viene escrita en la plantilla de Word del contrato; es el texto que se sustituye. */
+    private static function templateAnnualRate(?string $type): float
     {
         return $type === 'FUNERARIO' ? self::ANNUAL_RATE_GUARANTEE : self::ANNUAL_RATE_PERSONAL;
     }
@@ -42,7 +50,7 @@ class GenerateLoanDocumentsAction
 
     public static function monthlyRate(?string $type): float
     {
-        return $type === 'FUNERARIO' ? self::MONTHLY_RATE_GUARANTEE : self::MONTHLY_RATE_PERSONAL;
+        return LoanProduct::forType($type)->monthlyRate();
     }
 
     /**
@@ -73,17 +81,18 @@ class GenerateLoanDocumentsAction
         $plan = $loan->payment;
         $amount = (float) ($plan->request_amount ?? $loan->amount);
         $term = (int) ($plan->total_months ?? $loan->term);
-        $defaultRate = self::annualRate($loan->type);
-        $annual = $plan ? round($plan->month_rate * 12 * 100, 2) : $defaultRate;
-        $fee = $plan ? (float) $plan->opening_fees : (float) self::DEFAULT_OPENING_FEE;
+        $product = LoanProduct::forType($loan->type);
+        $templateRate = self::templateAnnualRate($loan->type);
+        $annual = $plan ? round($plan->month_rate * 12 * 100, 2) : $product->annual_rate;
+        $fee = $plan ? (float) $plan->opening_fees : $product->opening_fee;
         $schedule = $this->amortization($amount, $term, Carbon::parse($loan->start_at ?? now()), $annual);
 
         // El texto de la plantilla trae la tasa por defecto; se sustituye por la definida para este préstamo
         $rateTexts = [];
-        if (abs($annual - $defaultRate) > 0.001) {
+        if (abs($annual - $templateRate) > 0.001) {
             $rateTexts = [
-                self::pct($defaultRate) . '%' => self::pct($annual) . '%',
-                self::pct($defaultRate / 12) . '%' => self::pct($annual / 12) . '%',
+                self::pct($templateRate) . '%' => self::pct($annual) . '%',
+                self::pct($templateRate / 12) . '%' => self::pct($annual / 12) . '%',
             ];
         }
         $common += $rateTexts;

@@ -23,6 +23,8 @@ class User extends Authenticatable
         'email',
         'password',
         'avatar',
+        'privacy_accepted_at',
+        'consent_version',
     ];
 
     /**
@@ -33,6 +35,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
     ];
 
     /**
@@ -44,6 +48,10 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'privacy_accepted_at' => 'datetime',
+            'two_factor_secret' => 'encrypted',
+            'two_factor_recovery_codes' => 'encrypted:array',
+            'two_factor_confirmed_at' => 'datetime',
             'password' => 'hashed',
         ];
     }

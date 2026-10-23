@@ -20,6 +20,17 @@ const conditions = computed(() => {
     };
 });
 
+// El plan recién generado trae el CAT en porcentaje; el guardado lo trae como fracción
+const cat = computed(() => {
+    const t = paymentTable.value || {};
+    if (t.cat_con_iva !== undefined) {
+        return { withVat: Number(t.cat_con_iva), withoutVat: Number(t.cat_sin_iva) };
+    }
+    const saved = t.cat_amount !== undefined && t.cat_amount !== null ? Number(t.cat_amount) * 100 : null;
+    const savedWithout = t.cat_sin_iva !== undefined && t.cat_sin_iva !== null ? Number(t.cat_sin_iva) * 100 : null;
+    return { withVat: saved, withoutVat: savedWithout };
+});
+
 function renamePayments(newValue) {
     if (newValue.details) {
         newValue.payments = newValue.details;
@@ -74,15 +85,12 @@ watch(
 
                     <div class="text-gray-700">
                         <p class="text-2xl font-semibold">
-                            {{
-                                round(
-                                    (paymentTable.CAT_simple_interest ||
-                                        paymentTable.cat_amount) * 100,
-                                )
-                            }}
-                            %
+                            {{ cat.withVat !== null ? `${cat.withVat.toFixed(1)} %` : '-' }}
                         </p>
-                        <p>CAT {{ paymentTable.type }}</p>
+                        <p>CAT con IVA</p>
+                        <p v-if="cat.withoutVat !== null" class="text-sm">
+                            {{ cat.withoutVat.toFixed(1) }} % sin IVA
+                        </p>
                     </div>
                 </div>
             </div>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Loan;
+use App\Services\LoanPortfolio;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Actions\Customers\GetCustomerLoansAction;
@@ -23,7 +24,7 @@ class CustomerController extends Controller
         ]);
     }
 
-    public function payments($customer, $loan)
+    public function payments($customer, $loan, LoanPortfolio $portfolio)
     {
         $customer = Customer::findOrFail($customer);
         $loan = Loan::with('payment.details')->where('customer_id', $customer->id)->findOrFail($loan);
@@ -36,6 +37,8 @@ class CustomerController extends Controller
         return Inertia::render('Customers/Payments', [
             'customer' => $customer,
             'loan' => $loan,
+            'summary' => $portfolio->summary($loan),
+            'isStaff' => auth()->user()->hasAnyRole(['Administrator', 'Advisor']),
         ]);
     }
 }

@@ -40,6 +40,7 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user ?? null,
                 'roles' => $user->roles ?? [],
             ],
+            'recaptchaSiteKey' => config('promas.recaptcha.site_key'),
             'ziggy' => fn () => [
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),

@@ -4,7 +4,7 @@ import { useAgentLoanStore } from '@/stores/loans.store';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useToast } from 'vue-toastification';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/Components/ui/card';
 import DocumentUpload from '@/Components/ui/document-upload.vue';
@@ -75,6 +75,105 @@ async function viewContract() {
 
 const changeStep = (newstep) => (step.value = newstep);
 
+// ---- Etapa de la solicitud --------------------------------------------------------------
+const stageStyle = {
+    received: 'bg-gray-100 text-gray-800',
+    in_validation: 'bg-blue-100 text-blue-800',
+    approved: 'bg-green-100 text-green-800',
+    disbursed: 'bg-teal-100 text-teal-800',
+    paid: 'bg-emerald-100 text-emerald-900',
+    rejected: 'bg-red-100 text-red-800',
+};
+
+async function startValidation() {
+    try {
+        const { data } = await axios.post(route('loans.validation', loan.value.id));
+        loan.value = { ...loan.value, ...data.data };
+        toast.success(data.message);
+    } catch (error) {
+        toast.error(error.response?.data?.message || 'No se pudo cambiar la etapa.');
+    }
+}
+
+async function disburse() {
+    const result = await Swal.fire({
+        title: '¿Registrar el desembolso?',
+        text: 'Confirma que ya entregaste el dinero al cliente.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#2ECC71',
+        cancelButtonText: 'Cancelar',
+        confirmButtonText: 'Sí, ya se entregó',
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+        const { data } = await axios.post(route('loans.disburse', loan.value.id));
+        loan.value = { ...loan.value, ...data.data };
+        toast.success(data.message);
+    } catch (error) {
+        toast.error(error.response?.data?.message || 'No se pudo registrar el desembolso.');
+    }
+}
+
+// ---- Calculadora interna: condiciones a aprobar y capacidad de pago ------------------------
+const processed = computed(() => Boolean(loan.value.approved_at || loan.value.reject_at));
+const approval = ref({ amount: Number(loan.value.amount) || '', term: Number(loan.value.term) || '' });
+const preview = ref(null);
+const previewError = ref('');
+let previewTimer;
+
+async function recalc() {
+    preview.value = null;
+    previewError.value = '';
+    if (!approval.value.amount || !approval.value.term) return;
+    try {
+        const { data } = await axios.post(route('loans.preview', loan.value.id), { amount: approval.value.amount, term: approval.value.term });
+        preview.value = data.data;
+    } catch (error) {
+        const errors = error.response?.data?.errors;
+        previewError.value = errors ? Object.values(errors).flat()[0] : 'No se pudo calcular.';
+    }
+}
+
+watch(approval, () => {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(recalc, 400);
+}, { deep: true });
+
+if (!processed.value && approval.value.amount && approval.value.term) recalc();
+
+const changedConditions = computed(
+    () => Number(approval.value.amount) !== Number(loan.value.amount) || Number(approval.value.term) !== Number(loan.value.term),
+);
+
+const capacity = computed(() => {
+    const job = loan.value.customer?.employment;
+    if (!job || !preview.value) return null;
+    const income = Number(job.monthly_income || 0) + Number(job.other_income || 0);
+    const hasExpenses = job.monthly_expenses !== null && job.monthly_expenses !== undefined && job.monthly_expenses !== '';
+    const expenses = hasExpenses ? Number(job.monthly_expenses) : null;
+    const available = expenses === null ? income : income - expenses;
+    const payment = preview.value.first_payment;
+    if (income <= 0) return { income, expenses, available, ratio: null, level: 'unknown', text: 'No hay ingresos capturados para evaluar la capacidad de pago.' };
+    if (available <= 0) return { income, expenses, available, ratio: null, level: 'high', text: 'Los egresos igualan o superan los ingresos: el cliente no tiene margen para una cuota.' };
+    const ratio = payment / available;
+    const level = ratio <= 0.3 ? 'ok' : ratio <= 0.5 ? 'warn' : 'high';
+    const text = {
+        ok: 'La cuota representa una parte cómoda del ingreso disponible.',
+        warn: 'La cuota es una parte considerable del ingreso disponible; revisa con cuidado.',
+        high: 'La cuota excede la mitad del ingreso disponible: riesgo alto de impago.',
+    }[level];
+    return { income, expenses, available, ratio, level, text, withoutExpenses: expenses === null };
+});
+
+const capacityStyle = {
+    ok: 'border-green-300 bg-green-50 text-green-900',
+    warn: 'border-yellow-300 bg-yellow-50 text-yellow-900',
+    high: 'border-red-300 bg-red-50 text-red-900',
+    unknown: 'border-gray-300 bg-gray-50 text-gray-700',
+};
+
 const handleDocumentsUpdate = (newDocuments) => {
     documents.value = newDocuments;
 };
@@ -82,8 +181,11 @@ const handleDocumentsUpdate = (newDocuments) => {
 async function rejectLoan() {
     const result = await Swal.fire({
         title: '¿Estás seguro?',
-        text: 'La solicitud será rechazada y se avisará al solicitante',
+        text: 'La solicitud será rechazada. Puedes anotar el motivo para el expediente.',
         icon: 'warning',
+        input: 'text',
+        inputPlaceholder: 'Motivo del rechazo (opcional)',
+        inputAttributes: { maxlength: 500 },
         showCancelButton: true,
         confirmButtonColor: '#F39C12',
         cancelButtonColor: '#d33',
@@ -94,6 +196,7 @@ async function rejectLoan() {
         try {
             await axios.put(`/loans/${loan.value.id}`, {
                 status: 'rejected',
+                reason: result.value || null,
             });
             toast.info(
                 'Solicitud Rechazada. El solicitante recibirá la notificación vía email.',
@@ -108,7 +211,9 @@ async function rejectLoan() {
 async function validateLoan() {
     const result = await Swal.fire({
         title: '¿Estás seguro?',
-        text: 'La solicitud será aceptada y se avisará al solicitante',
+        text: changedConditions.value
+            ? `Se aprobará ${money(approval.value.amount)} a ${approval.value.term} meses (el cliente pidió ${money(loan.value.amount)} a ${loan.value.term} meses).`
+            : 'La solicitud será aceptada y se avisará al solicitante',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#2ECC71',
@@ -120,11 +225,14 @@ async function validateLoan() {
         try {
             const response = await axios.put(`/loans/${loan.value.id}`, {
                 status: 'accepted',
+                amount: approval.value.amount,
+                term: approval.value.term,
             });
             toast.success(response.data.message);
             router.visit(route('loans.index'));
         } catch (error) {
-            toast.error(error);
+            const errors = error.response?.data?.errors;
+            toast.error(errors ? Object.values(errors).flat()[0] : error.response?.data?.message || 'No se pudo aprobar la solicitud.');
         }
     }
 }
@@ -197,6 +305,42 @@ async function updateDocuments() {
                         <CardDescription>Información completa del cliente y su solicitud de préstamo</CardDescription>
                     </CardHeader>
                     <CardContent class="w-full p-4">
+                        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <span :class="['rounded px-3 py-1 text-sm font-semibold', stageStyle[loan.stage]]">{{ loan.stage_label }}</span>
+                                <span v-if="loan.requested_amount || loan.requested_term" class="text-sm text-gray-600">
+                                    El cliente pidió {{ money(loan.requested_amount ?? loan.amount) }} a {{ loan.requested_term ?? loan.term }} meses ·
+                                    se aprobó {{ money(loan.amount) }} a {{ loan.term }} meses
+                                </span>
+                                <span v-if="loan.reject_reason" class="text-sm text-red-700">Motivo del rechazo: {{ loan.reject_reason }}</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <button
+                                    v-if="loan.stage === 'received'"
+                                    type="button"
+                                    class="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800"
+                                    @click="startValidation"
+                                >
+                                    Iniciar validación
+                                </button>
+                                <button
+                                    v-if="loan.stage === 'approved'"
+                                    type="button"
+                                    class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                                    @click="disburse"
+                                >
+                                    Registrar desembolso
+                                </button>
+                                <a
+                                    v-if="['approved', 'disbursed', 'paid'].includes(loan.stage)"
+                                    :href="route('loans.payments.index', loan.id)"
+                                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                    Cartera y pagos
+                                </a>
+                            </div>
+                        </div>
+
                         <div class="relative flex gap-4 overflow-x-auto shadow-md sm:rounded-lg">
                             <div
                                 class="w-1/4 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
@@ -309,6 +453,29 @@ async function updateDocuments() {
                                             </button>
                                         </div>
                                         <p class="mt-2 text-xs text-gray-600">La cuenta no se envía al cliente; entrégale estos datos por el medio que definas.</p>
+                                    </div>
+
+                                    <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                        <h6 class="mb-2 text-sm font-semibold text-gray-900">Consentimientos del solicitante</h6>
+                                        <dl v-if="loan?.customer?.privacy_accepted_at" class="grid grid-cols-1 gap-x-6 gap-y-1 text-sm md:grid-cols-2">
+                                            <div>
+                                                <dt class="inline text-gray-500">Aviso de Privacidad aceptado:</dt>
+                                                <dd class="ml-1 inline font-medium">{{ new Date(loan.customer.privacy_accepted_at).toLocaleString('es-MX') }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="inline text-gray-500">Consulta en Sociedades de Información Crediticia autorizada:</dt>
+                                                <dd class="ml-1 inline font-medium">{{ loan.customer.credit_check_authorized_at ? new Date(loan.customer.credit_check_authorized_at).toLocaleString('es-MX') : 'No' }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="inline text-gray-500">Versión del texto:</dt>
+                                                <dd class="ml-1 inline font-medium">{{ loan.customer.consent_version }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt class="inline text-gray-500">Desde la IP:</dt>
+                                                <dd class="ml-1 inline font-medium">{{ loan.customer.consent_ip }}</dd>
+                                            </div>
+                                        </dl>
+                                        <p v-else class="text-sm text-gray-600">Esta solicitud se capturó antes de que se registraran los consentimientos.</p>
                                     </div>
                                     <div class="flex justify-end">
                                         <button type="submit"
@@ -497,6 +664,14 @@ async function updateDocuments() {
                                                 class="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400"
                                                 :value="`${loan?.customer?.employment?.other_income}`" />
                                         </div>
+                                        <div>
+                                            <label for="monthly_expenses"
+                                                class="mb-2 block text-sm font-medium text-gray-900 dark:text-white">Egresos
+                                                mensuales</label>
+                                            <input type="text" name="monthly_expenses" id="monthly_expenses" readonly
+                                                class="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400"
+                                                :value="loan?.customer?.employment?.monthly_expenses ?? 'No capturado'" />
+                                        </div>
                                     </div>
                                     <div class="flex justify-end">
                                         <button
@@ -611,6 +786,64 @@ async function updateDocuments() {
                                                 :value="loan?.purpose_description"></textarea>
                                         </div>
                                     </div>
+
+                                    <div v-if="!processed" class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                        <h6 class="text-base font-semibold text-gray-900">Condiciones a aprobar</h6>
+                                        <p class="text-sm text-gray-600">Puedes aprobar un monto o un plazo distinto al solicitado; la calculadora muestra el efecto antes de decidir.</p>
+
+                                        <div class="mt-3 flex flex-wrap gap-4">
+                                            <div>
+                                                <label for="approve-amount" class="mb-1 block text-sm font-medium text-gray-900">Monto a aprobar</label>
+                                                <input id="approve-amount" v-model.number="approval.amount" type="number" min="1" step="100"
+                                                    class="block w-40 rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
+                                            </div>
+                                            <div>
+                                                <label for="approve-term" class="mb-1 block text-sm font-medium text-gray-900">Plazo (meses)</label>
+                                                <input id="approve-term" v-model.number="approval.term" type="number" min="1" step="1"
+                                                    class="block w-32 rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
+                                            </div>
+                                        </div>
+
+                                        <p v-if="changedConditions" class="mt-2 text-sm text-orange-700">
+                                            Distinto a lo solicitado ({{ money(loan.amount) }} a {{ loan.term }} meses).
+                                        </p>
+                                        <p v-if="previewError" class="mt-2 text-sm text-red-600">{{ previewError }}</p>
+
+                                        <dl v-if="preview" class="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+                                            <div class="rounded-lg bg-white p-3">
+                                                <dt class="text-xs uppercase text-gray-500">Primer pago</dt>
+                                                <dd class="font-bold text-gray-900">{{ money(preview.first_payment) }}</dd>
+                                            </div>
+                                            <div class="rounded-lg bg-white p-3">
+                                                <dt class="text-xs uppercase text-gray-500">Total a pagar</dt>
+                                                <dd class="font-bold text-gray-900">{{ money(preview.total_to_pay) }}</dd>
+                                            </div>
+                                            <div class="rounded-lg bg-white p-3">
+                                                <dt class="text-xs uppercase text-gray-500">Tasa anual</dt>
+                                                <dd class="font-bold text-gray-900">{{ preview.annual_rate }}%</dd>
+                                            </div>
+                                            <div class="rounded-lg bg-white p-3">
+                                                <dt class="text-xs uppercase text-gray-500">CAT sin IVA</dt>
+                                                <dd class="font-bold text-gray-900">{{ preview.cat_sin_iva }}%</dd>
+                                            </div>
+                                            <div class="rounded-lg bg-white p-3">
+                                                <dt class="text-xs uppercase text-gray-500">CAT con IVA</dt>
+                                                <dd class="font-bold text-gray-900">{{ preview.cat_con_iva }}%</dd>
+                                            </div>
+                                        </dl>
+
+                                        <div v-if="capacity" :class="['mt-4 rounded-lg border p-3 text-sm', capacityStyle[capacity.level]]">
+                                            <p class="font-semibold">Capacidad de pago</p>
+                                            <p class="mt-1">
+                                                Ingresos {{ money(capacity.income) }}
+                                                <template v-if="capacity.expenses !== null"> · egresos {{ money(capacity.expenses) }} · disponible {{ money(capacity.available) }}</template>
+                                                <template v-if="capacity.ratio !== null"> · la cuota es el <strong>{{ Math.round(capacity.ratio * 100) }}%</strong> del ingreso {{ capacity.withoutExpenses ? '' : 'disponible' }}</template>
+                                            </p>
+                                            <p class="mt-1">{{ capacity.text }}</p>
+                                            <p v-if="capacity.withoutExpenses" class="mt-1 text-xs">Este expediente no tiene egresos capturados; el cálculo usa solo los ingresos.</p>
+                                        </div>
+                                    </div>
+
                                     <div class="flex justify-between">
                                         <button type="button"
                                             class="rounded-lg bg-yellow-500 px-5 py-2.5 text-center text-sm font-medium text-white hover:bg-yellow-600 focus:outline-none focus:ring-4 focus:ring-yellow-300 disabled:bg-orange-300 disabled:opacity-75 dark:bg-yellow-300 dark:hover:bg-yellow-400 dark:focus:ring-yellow-800"

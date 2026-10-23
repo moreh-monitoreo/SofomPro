@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\TwoFactorAuth;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,10 @@ class ProfileController extends Controller
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => session('status'),
             'avatar' => $request->user()->avatar,
+            'twoFactor' => TwoFactorAuth::appliesTo($request->user()) ? [
+                'enabled' => (bool) $request->user()->two_factor_confirmed_at,
+                'recoveryCodesLeft' => count($request->user()->two_factor_recovery_codes ?? []),
+            ] : null,
         ]);
     }
 

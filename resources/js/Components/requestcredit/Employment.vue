@@ -192,6 +192,13 @@
                     type="number"
                 />
                 <FormInput
+                    v-model="form.monthly_expenses"
+                    label="Egresos mensuales"
+                    required
+                    :error="errors.monthly_expenses"
+                    type="number"
+                />
+                <FormInput
                     v-model="form.other_income"
                     label="Otros ingresos"
                     required
@@ -312,6 +319,11 @@ export default {
                         errors.value[field] = 'Este campo es requerido';
                     }
                     break;
+                case 'monthly_expenses':
+                    if (form.value[field] === '' || form.value[field] === null || Number(form.value[field]) < 0) {
+                        errors.value[field] = 'Este campo es requerido';
+                    }
+                    break;
                 case 'other_income':
                     if (!form.value[field]) {
                         errors.value[field] = 'Este campo es requerido';
@@ -321,7 +333,7 @@ export default {
         };
 
         const validateForm = () => {
-            const requiredFields = ['type', 'area', 'main_activity', 'company', 'job', 'seniority_working', 'phone', 'imss', 'insurance_major_medical_expenses', 'monthly_income', 'other_income'];
+            const requiredFields = ['type', 'area', 'main_activity', 'company', 'job', 'seniority_working', 'phone', 'imss', 'insurance_major_medical_expenses', 'monthly_income', 'monthly_expenses', 'other_income'];
             requiredFields.forEach(field => validateField(field));
             return !Object.values(errors.value).some(error => error !== '');
         };

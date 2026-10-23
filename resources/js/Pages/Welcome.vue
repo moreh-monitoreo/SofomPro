@@ -87,6 +87,7 @@ document.querySelectorAll('.faq-question').forEach((question) => {
 
     <!-- Simulador de Préstamos -->
     <div
+        id="simulador"
         class="mt-[150px] w-full px-4 py-16 md:py-24"
         style="background-image: url('/Fotos/texture.webp')"
     >

@@ -3,7 +3,7 @@
         <div
             class="flex w-3/4 flex-col items-center justify-between border-b-[1px] border-[#E6E6E6] py-[40px] sm:flex-row"
         >
-            <a href="index.html">
+            <a :href="route('site.index')">
                 <img
                     src="/Fotos/Logo.png"
                     alt="logo"
@@ -34,27 +34,27 @@
         >
             <div class="flex flex-col gap-4">
                 <p class="text-[16px] font-bold">Navegacion</p>
-                <a href="index.html" class="text-[14px]">Inicio</a>
-                <a href="quienes-somos.html" class="text-[14px]"
+                <a :href="route('site.index')" class="text-[14px]">Inicio</a>
+                <a :href="route('site.whoami')" class="text-[14px]"
                     >Quienes Somos</a
                 >
-                <a href="contacto.html" class="text-[14px]">Contactanos</a>
+                <a :href="route('site.contact')" class="text-[14px]">Contactanos</a>
             </div>
 
             <div class="flex flex-col gap-4">
                 <p class="text-[16px] font-bold">Navegacion</p>
-                <a href="prestamo-personal.html" class="text-[14px]"
+                <a :href="route('site.personalloan')" class="text-[14px]"
                     >Prestamos Personales</a
                 >
-                <a href="prestamo-garantia.html" class="text-[14px]"
+                <a :href="route('site.loanguarantee')" class="text-[14px]"
                     >Prestamos con Garantia</a
                 >
             </div>
 
             <div class="flex flex-col gap-4">
                 <p class="text-[16px] font-bold">Legal</p>
-                <a href="politicas-privacidad.html" class="text-[14px]"
-                    >Politicas de Privacidad</a
+                <a :href="route('site.privacy')" class="text-[14px]"
+                    >Aviso de Privacidad</a
                 >
             </div>
         </div>
@@ -62,7 +62,7 @@
         <p
             class="mt-[50px] px-6 text-center text-[10px] font-bold text-[#2D3133]"
         >
-            Copyright © 2023 Pro + Consulting. Todos los derechos reservados.
+            Copyright © 2026 PROMÁS+. Todos los derechos reservados.
         </p>
     </footer>
 </template>

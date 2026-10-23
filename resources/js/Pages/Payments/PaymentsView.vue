@@ -1,13 +1,17 @@
 <script setup>
 import FormCreatePayment from '@/Components/payments/FormCreatePayment.vue';
+import PaymentsLedger from '@/Components/payments/PaymentsLedger.vue';
 import PaymentsTable from '@/Components/payments/PaymentsTable.vue';
 import DashboardLayout from '@/Layouts/DashboardLayout.vue';
+import { Head } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import { ref } from 'vue';
 import { useToast } from 'vue-toastification';
 
 const props = defineProps({
     loan: Object,
+    summary: Object,
+    isAdmin: { type: Boolean, default: false },
 });
 const toast = useToast();
 const show = ref(false);
@@ -93,10 +97,17 @@ function handlePaymentsCreated(data) {
                         <h5
                             class="text-xl font-medium text-gray-900 dark:text-white"
                         >
-                            {{ title }}
+                            Plan de pagos de {{ loan.customer?.full_name }}
                         </h5>
                         <FormCreatePayment :loan="loan" @paymentsCreated="handlePaymentsCreated"></FormCreatePayment>
                         <PaymentsTable :paymentTable="paymentTable"></PaymentsTable>
+                        <PaymentsLedger
+                            v-if="loan.payment?.details?.length"
+                            :key="`ledger-${loan.payment.id}`"
+                            :loan="loan"
+                            :summary="summary"
+                            :is-admin="isAdmin"
+                        ></PaymentsLedger>
                     </div>
                 </div>
             </div>

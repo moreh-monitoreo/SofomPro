@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import DeleteUserForm from './Partials/DeleteUserForm.vue';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm.vue';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm.vue';
+import TwoFactorSection from './Partials/TwoFactorSection.vue';
 import UpdateAvatarForm from './Partials/UpdateAvatarForm.vue';
 import DashboardLayout from '@/Layouts/DashboardLayout.vue';
 import { Head } from '@inertiajs/vue3';
@@ -11,6 +12,7 @@ defineProps<{
     mustVerifyEmail?: boolean;
     status?: string;
     avatar?: string;
+    twoFactor?: { enabled: boolean; recoveryCodesLeft: number } | null;
 }>();
 </script>
 
@@ -48,6 +50,13 @@ defineProps<{
                     class="bg-white p-4 shadow sm:rounded-lg sm:p-8 dark:bg-gray-800"
                 >
                     <UpdatePasswordForm class="max-w-xl" />
+                </div>
+
+                <div
+                    v-if="twoFactor"
+                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8 dark:bg-gray-800"
+                >
+                    <TwoFactorSection :enabled="twoFactor.enabled" :recovery-codes-left="twoFactor.recoveryCodesLeft" />
                 </div>
             </div>
         </div>

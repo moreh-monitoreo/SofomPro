@@ -16,7 +16,7 @@ export default {
                 ...this.payload,
             });
 
-            const stripe = Stripe('pk_test_ienVbB7rmBmGjaydr01N8cLY00jX4KmqfG');
+            const stripe = Stripe(import.meta.env.VITE_STRIPE_KEY || 'pk_test_ienVbB7rmBmGjaydr01N8cLY00jX4KmqfG');
             const { error } = await stripe.redirectToCheckout({
                 sessionId: response.data.id,
             });
