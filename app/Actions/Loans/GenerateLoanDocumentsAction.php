@@ -85,7 +85,7 @@ class GenerateLoanDocumentsAction
         $templateRate = self::templateAnnualRate($loan->type);
         $annual = $plan ? round($plan->month_rate * 12 * 100, 2) : $product->annual_rate;
         $fee = $plan ? (float) $plan->opening_fees : $product->opening_fee;
-        $schedule = $this->amortization($amount, $term, Carbon::parse($loan->start_at ?? now()), $annual);
+        $schedule = $this->amortization($amount, $term, Carbon::parse($loan->start_at ?? now()), $annual, $fee, $product->iva / 100);
 
         // El texto de la plantilla trae la tasa por defecto; se sustituye por la definida para este préstamo
         $rateTexts = [];
@@ -112,9 +112,11 @@ class GenerateLoanDocumentsAction
         ], [
             '/^ORDINARIA:\s*[\d.]+%$/u' => 'ORDINARIA: ' . self::pct($annual) . '%',
             '/^Comisión por Apertura:\s*[\d.]+\s*%$/u' => 'Comisión por Apertura: ' . self::pct($fee) . ' %',
+            // CAT (sin IVA) de este crédito: depende del plazo y de la comisión, no puede ir fijo en la plantilla
+            '/^\d+(\.\d+)?\s*%$/u' => number_format($schedule['cat_sin_iva'], 1, '.', '') . '%',
         ], function (DOMXPath $xp) use ($amount, $schedule) {
-            // Monto de crédito y monto total a pagar (dos líneas en blanco consecutivas)
-            $values = [number_format($amount, 2), number_format($schedule['total'], 2)];
+            // Monto de crédito y monto total a pagar, con comisión e impuestos (dos líneas en blanco consecutivas)
+            $values = [number_format($amount, 2), number_format($schedule['total_to_pay'], 2)];
             foreach ($xp->query('//w:p') as $p) {
                 if ($values && preg_match('/^_{5,}$/', trim($this->paragraphText($p)))) {
                     $this->setParagraphText($p, '$' . array_shift($values));
@@ -146,13 +148,14 @@ class GenerateLoanDocumentsAction
      * Tabla de amortización con el mismo cálculo del plan de pagos del administrador
      * (CreateQuotationTableAction): interés mensual sobre saldo insoluto e IVA sobre intereses.
      */
-    public function amortization(float $amount, int $term, Carbon $start, float $annualRate): array
+    public function amortization(float $amount, int $term, Carbon $start, float $annualRate, float $feePercent = 0, ?float $iva = null): array
     {
         if ($amount <= 0 || $term <= 0) {
             throw new RuntimeException('El préstamo no tiene monto o plazo definidos.');
         }
 
-        $table = app(CreateQuotationTableAction::class)->handle($amount, $term / 12, 0, $annualRate);
+        // La comisión no cambia las cuotas; se pasa para obtener el CAT real y el total a pagar con comisión e IVA
+        $table = app(CreateQuotationTableAction::class)->handle($amount, $term / 12, $feePercent, $annualRate, $iva);
         $rows = [];
         $totals = ['capital' => 0, 'interest' => 0, 'tax' => 0, 'payment' => 0];
 
@@ -172,7 +175,19 @@ class GenerateLoanDocumentsAction
             $totals['payment'] += $p['monthly_payment'];
         }
 
-        return ['rows' => $rows, 'total' => round($totals['payment'], 2), 'totals' => $totals];
+        $total = round($totals['payment'], 2);
+
+        return [
+            'rows' => $rows,
+            'total' => $total,
+            'totals' => $totals,
+            'opening_fee' => $table['opening_fee_amount'],
+            'opening_fee_tax' => $table['opening_fee_tax'],
+            // Monto total a pagar según el contrato: crédito + comisiones + intereses + impuestos
+            'total_to_pay' => round($total + $table['opening_fee_amount'] + $table['opening_fee_tax'], 2),
+            'cat_sin_iva' => $table['cat_sin_iva'],
+            'cat_con_iva' => $table['cat_con_iva'],
+        ];
     }
 
     private function build(Loan $loan, string $template, string $label, string $type, array $replacements, array $regexReplacements = [], ?callable $extra = null)

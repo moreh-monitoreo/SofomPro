@@ -43,7 +43,8 @@ class StripeController extends Controller
             'cancel_url' => url('/cancel'),
         ]);
 
-        return response()->json(['id' => $session->id]);
+        // El navegador solo abre la URL de pago de Stripe; así no depende de ninguna llave pública (pk_)
+        return response()->json(['id' => $session->id, 'url' => $session->url]);
     }
 
     /**
