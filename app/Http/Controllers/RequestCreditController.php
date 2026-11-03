@@ -85,6 +85,17 @@ class RequestCreditController extends Controller
 
     public function addaddress(Request $request, Customer $customer, IncrementScore $incrementScore)
     {
+        // Letras, dígitos, guiones, diagonal y espacios: 12-A, 4B, S/N, Depto 3
+        $number = ['regex:/^[\pL\pN\s\-\/.#]+$/u', 'max:20'];
+        $request->validate([
+            'outdoor_number' => ['required', ...$number],
+            'interior_number' => ['nullable', ...$number],
+        ], [
+            'outdoor_number.regex' => 'El número exterior solo admite letras, números, guiones y diagonal.',
+            'interior_number.regex' => 'El número interior solo admite letras, números, guiones y diagonal.',
+            '*.max' => 'Máximo 20 caracteres.',
+        ]);
+
         $status = Status::where('name', 'ADDRESS REGISTERED')->firstOrFail();
         $address = $customer->addresses()->updateOrCreate([],
             $request->only([

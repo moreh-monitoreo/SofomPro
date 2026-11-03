@@ -123,6 +123,26 @@ class RequestCreditFlowTest extends TestCase
         $this->postJson("/request-credit/customer/{$customerId}/documents", [])->assertForbidden();
     }
 
+    public function test_the_street_numbers_accept_letters_and_dashes(): void
+    {
+        $data = $this->startRequest();
+        $base = ['street' => 'Av. Reforma', 'suburb' => 'Centro', 'postal_code' => '80000', 'years_living' => 3, 'type' => 'Propia'];
+
+        $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => '12-A', 'interior_number' => 'B-203'])->assertCreated();
+
+        $this->assertDatabaseHas('customer_addresses', ['customer_id' => $data['id'], 'outdoor_number' => '12-A', 'interior_number' => 'B-203']);
+    }
+
+    public function test_the_street_numbers_reject_symbols_and_empty_values(): void
+    {
+        $data = $this->startRequest();
+        $base = ['street' => 'Av. Reforma', 'suburb' => 'Centro', 'postal_code' => '80000', 'years_living' => 3, 'type' => 'Propia'];
+
+        $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => '<b>1</b>'])->assertJsonValidationErrors('outdoor_number');
+        $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => ''])->assertJsonValidationErrors('outdoor_number');
+        $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => str_repeat('1', 21)])->assertJsonValidationErrors('outdoor_number');
+    }
+
     public function test_a_session_cannot_edit_another_applicants_record(): void
     {
         $victim = Customer::create([

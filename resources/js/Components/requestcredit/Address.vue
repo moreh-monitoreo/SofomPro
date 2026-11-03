@@ -14,8 +14,15 @@
                 <FormInput
                     v-model="form.outdoor_number"
                     label="Número exterior"
+                    required
+                    placeholder="Ej. 123, 12-A, S/N"
                     :error="errors.outdoor_number"
                     @blur="validateField('outdoor_number')"
+                />
+                <FormInput
+                    v-model="form.interior_number"
+                    label="Número interior (depto.)"
+                    placeholder="Ej. 4, B-2"
                 />
                 <FormInput
                     v-model="form.suburb"
