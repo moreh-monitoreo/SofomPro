@@ -144,6 +144,16 @@ class PortfolioTest extends TestCase
         return "/loans/{$built['loan']->id}/payments/{$built['details'][$index]->id}/register";
     }
 
+    public function test_the_payments_page_of_a_loan_opens_for_staff(): void
+    {
+        $built = $this->approvedLoan();
+
+        $this->actingAs($this->userWithRole('Advisor'))
+            ->get("/loans/{$built['loan']->id}/payments")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Payments/PaymentsView')->has('loan')->has('summary')->where('isAdmin', false));
+    }
+
     public function test_staff_can_register_a_manual_transfer(): void
     {
         $built = $this->approvedLoan();

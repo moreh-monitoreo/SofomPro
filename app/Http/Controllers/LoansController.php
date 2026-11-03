@@ -135,6 +135,18 @@ class LoansController extends Controller
         return new JsonResponse(['loan' => $loan->fresh(), 'message' => 'La solicitud fue aprobada, se creó la cuenta del cliente y su documentación']);
     }
 
+    public function payments(Request $request, LoanPortfolio $portfolio, $id)
+    {
+        $loan = Loan::with('payment.details', 'customer')->findOrFail($id);
+
+        return Inertia::render('Payments/PaymentsView', [
+            'loan' => $loan,
+            'summary' => $portfolio->summary($loan),
+            'isAdmin' => $request->user()->hasRole('Administrator'),
+            'message' => session('message'),
+        ]);
+    }
+
     public function createpayments(Request $request, $id, CreateQuotationTableAction $createQuotationTableAction, GenerateLoanDocumentsAction $generateDocuments)
     {
         $loan = Loan::with('payment.details')->findOrFail($id);
