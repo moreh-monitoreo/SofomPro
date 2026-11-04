@@ -39,13 +39,14 @@ class StatisticsController extends Controller
             ->whereNotNull('approved_at')
             ->whereNull('reject_at')
             ->whereNull('paid_at')
+            ->whereHas('payment')
             ->get();
 
         $paymentProgress = [];
         foreach ($activeLoansWithPayments as $loan) {
             $totalToPay = $loan->payment->payment_amount;
             $totalPaid = $loan->payment->details->where('status', 'S')->sum('monthly_payment');
-            $progress = ($totalPaid / $totalToPay) * 100;
+            $progress = $totalToPay > 0 ? ($totalPaid / $totalToPay) * 100 : 0;
 
             $paymentProgress[] = [
                 'customer' => $loan->customer->full_name,

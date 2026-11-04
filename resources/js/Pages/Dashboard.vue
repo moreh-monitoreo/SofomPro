@@ -72,7 +72,7 @@ const goToPayments = (loan) => router.visit(route('loans.show.payments', { custo
                 </div>
             </section>
 
-            <Card class="mt-5">
+            <Card v-if="!staff" class="mt-5">
                 <CardHeader class="flex flex-col p-4">
                     <CardTitle class="text-2xl">Mis préstamos</CardTitle>
                     <CardDescription>Estado de tus solicitudes, saldo y próximos pagos</CardDescription>

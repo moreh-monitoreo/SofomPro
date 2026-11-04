@@ -33,21 +33,21 @@
             class="flex w-3/4 flex-col gap-[60px] py-[40px] text-center sm:flex-row sm:text-left"
         >
             <div class="flex flex-col gap-4">
-                <p class="text-[16px] font-bold">Navegacion</p>
+                <p class="text-[16px] font-bold">Navegación</p>
                 <a :href="route('site.index')" class="text-[14px]">Inicio</a>
                 <a :href="route('site.whoami')" class="text-[14px]"
                     >Quienes Somos</a
                 >
-                <a :href="route('site.contact')" class="text-[14px]">Contactanos</a>
+                <a :href="route('site.contact')" class="text-[14px]">Contáctanos</a>
             </div>
 
             <div class="flex flex-col gap-4">
-                <p class="text-[16px] font-bold">Navegacion</p>
+                <p class="text-[16px] font-bold">Navegación</p>
                 <a :href="route('site.personalloan')" class="text-[14px]"
-                    >Prestamos Personales</a
+                    >Préstamos Personales</a
                 >
                 <a :href="route('site.loanguarantee')" class="text-[14px]"
-                    >Prestamos con Garantia</a
+                    >Préstamos con Garantía</a
                 >
             </div>
 

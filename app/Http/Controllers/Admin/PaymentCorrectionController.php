@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\JsonResponse;
 use App\Models\PaymentDetail;
+use App\Services\AuditLogger;
 use App\Services\LoanPortfolio;
 use App\Services\PaymentRegistrar;
 use InvalidArgumentException;
@@ -23,6 +24,7 @@ class PaymentCorrectionController extends Controller
         }
 
         $loan = $detail->payment->loan->load('payment.details');
+        AuditLogger::record('payment.reverted', $detail, $loan->id, after: ['number' => $detail->number]);
 
         return JsonResponse::success([
             'detail' => $detail->fresh(),

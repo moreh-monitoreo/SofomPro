@@ -13,7 +13,10 @@ class HomeController extends Controller
     {
         $user = auth()->user();
 
-        $loans = Loan::with('payment.details')
+        $isStaff = $user->hasAnyRole(['Administrator', 'Advisor']);
+
+        // El personal ve solo el resumen del equipo; "Mis préstamos" es del portal del cliente
+        $loans = $isStaff ? collect() : Loan::with('payment.details')
             ->whereHas('customer', fn ($query) => $query->where('user_id', $user->id))
             ->latest('id')
             ->get()
@@ -33,7 +36,7 @@ class HomeController extends Controller
 
         return Inertia::render('Dashboard', [
             'loans' => $loans,
-            'staff' => $user->hasAnyRole(['Administrator', 'Advisor']) ? $this->staffMetrics($portfolio) : null,
+            'staff' => $isStaff ? $this->staffMetrics($portfolio) : null,
             'message' => session('message'),
         ]);
     }
@@ -49,7 +52,7 @@ class HomeController extends Controller
         $overdue = Loan::with('payment.details')->overdue()->get()->map(fn (Loan $loan) => $portfolio->summary($loan));
 
         return [
-            'received' => Loan::stage('received')->whereNotNull('amount')->count(),
+            'received' => Loan::stage('received')->count(),
             'in_validation' => Loan::stage('in_validation')->count(),
             'approved' => Loan::stage('approved')->count(),
             'overdue_clients' => $overdue->count(),

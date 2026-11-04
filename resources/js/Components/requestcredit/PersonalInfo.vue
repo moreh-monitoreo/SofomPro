@@ -79,7 +79,7 @@
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700">
-                        Genero
+                        Género
                         <span class="text-red-500">*</span>
                     </label>
                     <select

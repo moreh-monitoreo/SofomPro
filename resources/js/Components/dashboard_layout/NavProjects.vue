@@ -1,32 +1,20 @@
 <script setup lang="ts">
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/Components/ui/dropdown-menu';
-import {
     SidebarGroup,
     SidebarGroupLabel,
     SidebarMenu,
-    SidebarMenuAction,
     SidebarMenuButton,
     SidebarMenuItem,
-    useSidebar,
 } from '@/Components/ui/sidebar';
 import {
-    Folder,
-    Forward,
     History,
     type LucideIcon,
-    MoreHorizontal,
-    Trash2,
     FileText,
     HandCoins,
     Percent,
     KanbanSquare,
     AlertTriangle,
+    ShieldCheck,
 } from 'lucide-vue-next';
 import { usePage } from '@inertiajs/vue3';
 import { hasAccess } from '@/lib/auth';
@@ -38,8 +26,6 @@ defineProps<{
         roles: Array<string>;
     }[];
 }>();
-const { isMobile } = useSidebar();
-
 const page = usePage();
 </script>
 <template>
@@ -67,39 +53,6 @@ const page = usePage();
                         <component :is="item.icon" />
                         <span>{{ item.name }}</span>
                     </a>
-                </SidebarMenuButton>
-                <DropdownMenu>
-                    <DropdownMenuTrigger as-child>
-                        <SidebarMenuAction show-on-hover>
-                            <MoreHorizontal />
-                            <span class="sr-only">More</span>
-                        </SidebarMenuAction>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                        class="w-48 rounded-lg"
-                        :side="isMobile ? 'bottom' : 'right'"
-                        :align="isMobile ? 'end' : 'start'"
-                    >
-                        <DropdownMenuItem>
-                            <Folder class="text-muted-foreground" />
-                            <span>View Project</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                            <Forward class="text-muted-foreground" />
-                            <span>Share Project</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                            <Trash2 class="text-muted-foreground" />
-                            <span>Delete Project</span>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-                <SidebarMenuButton class="text-sidebar-foreground/70">
-                    <MoreHorizontal class="text-sidebar-foreground/70" />
-                    <span>More</span>
                 </SidebarMenuButton>
             </SidebarMenuItem>
         </SidebarMenu>
@@ -167,6 +120,12 @@ const page = usePage();
                         <a :href="route('admin.loan-products.index')">
                             <Percent />
                             <span>Productos y tasas</span>
+                        </a>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton v-if="hasAccess(['Administrator'], page.props.auth.roles)" as-child>
+                        <a :href="route('admin.audit.index')">
+                            <ShieldCheck />
+                            <span>Bitácora de auditoría</span>
                         </a>
                     </SidebarMenuButton>
                 </SidebarMenuItem>

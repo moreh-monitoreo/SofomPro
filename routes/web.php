@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\LoanProductController;
 use App\Http\Controllers\Admin\PaymentCorrectionController;
 use App\Http\Controllers\OverdueController;
@@ -26,7 +27,6 @@ use Inertia\Inertia;
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
     ]);
@@ -75,7 +75,7 @@ Route::middleware(['auth', 'two-factor', 'role:Administrator|Advisor'])->group(f
     Route::get('loans/{id}/documents/{documentId}', [LoansController::class, 'showDocument'])->name('loans.documents.show')->whereNumber(['id', 'documentId']);
     Route::delete('loans/{id}/documents/{documentId}', [LoansController::class, 'destroyDocument'])->name('loans.documents.destroy')->whereNumber(['id', 'documentId']);
     Route::get('loans/{id}/plan-funerario', [LoansController::class, 'planFunerario'])->name('loans.plan-funerario')->where('id', '[0-9]+');
-    Route::post('loans/{id}/account/password', [LoansController::class, 'resetAccountPassword'])->name('loans.account.password')->where('id', '[0-9]+');
+    Route::post('loans/{id}/account/invitation', [LoansController::class, 'inviteAccount'])->name('loans.account.invitation')->where('id', '[0-9]+');
     Route::get('loans/history', [LoansController::class, 'history'])->name('loans.history');
     Route::post('loans/{id}/preview', [PortfolioController::class, 'preview'])->name('loans.preview')->whereNumber('id');
     Route::post('loans/{id}/validation', [PortfolioController::class, 'startValidation'])->name('loans.validation')->whereNumber('id');
@@ -101,6 +101,7 @@ Route::middleware(['auth', 'two-factor', 'role:Administrator|Advisor'])->group(f
 
 Route::middleware(['auth', 'two-factor', 'role:Administrator'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('loan-products', [LoanProductController::class, 'index'])->name('loan-products.index');
+    Route::get('audit', [AuditLogController::class, 'index'])->name('audit.index');
     Route::put('loan-products/{type}', [LoanProductController::class, 'update'])->name('loan-products.update');
     Route::post('payments/{detail}/revert', [PaymentCorrectionController::class, 'revert'])->name('payments.revert')->whereNumber('detail');
 });

@@ -159,6 +159,8 @@ class RequestCreditController extends Controller
             'area.required' => 'Selecciona tu área de trabajo.',
             'main_activity.required' => 'Selecciona tu actividad principal.',
             'seniority_working.required' => 'Captura tu antigüedad laboral en años.',
+            'seniority_working.integer' => 'Los años de experiencia deben ser un número entero.',
+            'seniority_working.max' => 'Los años de experiencia no pueden ser más de 80.',
             'monthly_income.required' => 'Captura tus ingresos mensuales.',
             'monthly_expenses.required' => 'Captura tus egresos mensuales.',
         ]);

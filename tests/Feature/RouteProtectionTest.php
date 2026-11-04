@@ -22,7 +22,7 @@ class RouteProtectionTest extends TestCase
         'prestamo-personal/solicitar', 'success', 'cancel', 'stripe/webhook', 'up',
         'api/simulator', 'api/simulator/config',
         'request-credit/*',
-        'register', 'login', 'forgot-password', 'reset-password', 'reset-password/{token}', 'sanctum/csrf-cookie',
+        'login', 'forgot-password', 'reset-password', 'reset-password/{token}', 'sanctum/csrf-cookie',
         'storage/{path}',
     ];
 

@@ -138,6 +138,8 @@
                 <FormInput
                     v-model="form.seniority_working"
                     label="Años de experiencia"
+                    type="number"
+                    placeholder="Ej. 3"
                     required
                     :error="errors.seniority_working"
                 />
@@ -295,8 +297,10 @@ export default {
                     }
                     break;
                 case 'seniority_working':
-                    if (!form.value[field]) {
+                    if (form.value[field] === '' || form.value[field] === null) {
                         errors.value[field] = 'Este campo es requerido';
+                    } else if (!/^\d{1,2}$/.test(String(form.value[field]))) {
+                        errors.value[field] = 'Captura los años como número entero (0 a 80)';
                     }
                     break;
                 case 'phone':

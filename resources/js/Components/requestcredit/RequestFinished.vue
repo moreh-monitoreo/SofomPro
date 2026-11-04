@@ -1,7 +1,7 @@
 <template>
     <div class="space-y-6">
         <h2 class="text-center text-lg font-medium text-gray-900">
-            Solicitud Finalizada
+            Solicitud finalizada
         </h2>
 
         <h3 class="text-center text-lg font-medium text-gray-900">

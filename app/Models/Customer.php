@@ -9,10 +9,9 @@ class Customer extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['user_id', 'status_id', 'email', 'phone', 'account_password', 'name', 'second_name', 'last_name', 'maiden_name', 'gender', 'birthday', 'state', 'country', 'rfc', 'curp', 'civil_status', 'level_study', 'own_car', 'economic_dependents', 'privacy_accepted_at', 'credit_check_authorized_at', 'consent_version', 'consent_ip', 'consent_user_agent'];
+    protected $fillable = ['user_id', 'status_id', 'email', 'phone', 'name', 'second_name', 'last_name', 'maiden_name', 'gender', 'birthday', 'state', 'country', 'rfc', 'curp', 'civil_status', 'level_study', 'own_car', 'economic_dependents', 'privacy_accepted_at', 'credit_check_authorized_at', 'consent_version', 'consent_ip', 'consent_user_agent'];
 
     // Nunca se serializa; el administrador la consulta solo desde el detalle del préstamo
-    protected $hidden = ['account_password'];
 
     protected $casts = [
         'privacy_accepted_at' => 'datetime',

@@ -22,28 +22,25 @@ const loan = ref(props.loan);
 const documents = ref([]);
 
 const account = ref(props.account);
-const showPassword = ref(false);
 const accountLoading = ref(false);
 
-// Genera una contraseña nueva para la cuenta del cliente (por si no existe o se perdió)
-async function resetAccountPassword() {
+// Reenvía al cliente el correo para crear su contraseña (nadie del personal la conoce)
+async function inviteAccount() {
     const result = await Swal.fire({
-        title: '¿Generar nueva contraseña?',
-        text: 'La contraseña actual del cliente dejará de funcionar.',
-        icon: 'warning',
+        title: '¿Enviar invitación?',
+        text: 'El cliente recibirá un correo con un enlace para crear su contraseña.',
+        icon: 'question',
         showCancelButton: true,
         cancelButtonText: 'Cancelar',
-        confirmButtonText: 'Si, generar',
+        confirmButtonText: 'Si, enviar',
     });
     if (!result.isConfirmed) return;
     accountLoading.value = true;
     try {
-        const response = await axios.post(route('loans.account.password', loan.value.id));
-        account.value = response.data.account;
-        showPassword.value = true;
+        const response = await axios.post(route('loans.account.invitation', loan.value.id));
         toast.success(response.data.message);
     } catch (error) {
-        toast.error(error.response?.data?.message || 'No se pudo generar la contraseña');
+        toast.error(error.response?.data?.message || 'No se pudo enviar la invitación');
     } finally {
         accountLoading.value = false;
     }
@@ -367,7 +364,7 @@ async function updateDocuments() {
                                 <button type="button"
                                     class="w-full cursor-pointer rounded-b-lg bg-gray-100 px-4 py-2 text-left font-medium rtl:text-right dark:bg-gray-600 dark:text-gray-400"
                                     @click="changeStep(4)">
-                                    Prestamo
+                                    Préstamo
                                 </button>
                             </div>
 
@@ -434,25 +431,12 @@ async function updateDocuments() {
                                                 <input type="text" readonly :value="account?.email || loan?.customer?.email"
                                                     class="block w-64 rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
                                             </div>
-                                            <div>
-                                                <label class="mb-2 block text-sm font-medium text-gray-900">Contraseña</label>
-                                                <div class="flex gap-2">
-                                                    <input :type="showPassword ? 'text' : 'password'" readonly
-                                                        :value="account?.password || ''" :placeholder="account?.password ? '' : 'No disponible'"
-                                                        autocomplete="off"
-                                                        class="block w-48 rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
-                                                    <button type="button" :disabled="!account?.password" @click="showPassword = !showPassword"
-                                                        class="rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50">
-                                                        {{ showPassword ? 'Ocultar' : 'Mostrar' }}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <button type="button" :disabled="accountLoading" @click="resetAccountPassword"
+                                            <button type="button" :disabled="accountLoading" @click="inviteAccount"
                                                 class="rounded-lg bg-gray-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60">
-                                                {{ account?.password ? 'Generar nueva' : 'Generar contraseña' }}
+                                                Reenviar invitación
                                             </button>
                                         </div>
-                                        <p class="mt-2 text-xs text-gray-600">La cuenta no se envía al cliente; entrégale estos datos por el medio que definas.</p>
+                                        <p class="mt-2 text-xs text-gray-600">El cliente crea su propia contraseña con el enlace que recibe por correo; el personal no la puede ver.</p>
                                     </div>
 
                                     <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -694,6 +678,7 @@ async function updateDocuments() {
                                                 {{ documentation.name }} ({{ documentation.type }})
                                             </a>
                                             <button
+                                                v-if="!loan.approved_at"
                                                 type="button"
                                                 class="ml-3 text-sm text-red-600 hover:text-red-800 hover:underline"
                                                 @click="deleteDocument(documentation)">
@@ -722,7 +707,7 @@ async function updateDocuments() {
                                 </form>
                                 <form class="space-y-6" action="#" v-if="step == 4">
                                     <h5 class="text-xl font-medium text-gray-900 dark:text-white">
-                                        Prestamo
+                                        Préstamo
                                     </h5>
                                     <div v-if="loan?.type === 'FUNERARIO'" class="flex items-end justify-start gap-4 rounded-lg border border-blue-200 bg-blue-50 p-3">
                                         <div>
@@ -844,7 +829,7 @@ async function updateDocuments() {
                                         </div>
                                     </div>
 
-                                    <div class="flex justify-between">
+                                    <div v-if="!loan.approved_at && !loan.reject_at" class="flex justify-between">
                                         <button type="button"
                                             class="rounded-lg bg-yellow-500 px-5 py-2.5 text-center text-sm font-medium text-white hover:bg-yellow-600 focus:outline-none focus:ring-4 focus:ring-yellow-300 disabled:bg-orange-300 disabled:opacity-75 dark:bg-yellow-300 dark:hover:bg-yellow-400 dark:focus:ring-yellow-800"
                                             @click="rejectLoan" :disabled="loan.approved_at || loan.reject_at

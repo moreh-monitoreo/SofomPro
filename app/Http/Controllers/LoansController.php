@@ -8,6 +8,7 @@ use App\Actions\Loans\GenerateLoanDocumentsAction;
 use App\Services\MorehContractService;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Services\AuditLogger;
 use App\Services\LoanPortfolio;
 use App\Models\Payment;
 use App\Models\PaymentDetail;
@@ -24,8 +25,21 @@ class LoansController extends Controller
 {
     public function index()
     {
-        $loans = Loan::with('customer')->withCount('payment')->orderBy('id', 'desc')->paginate();
-        
+        // Solo los campos que muestra la tabla: el expediente completo (CURP, RFC, ingresos) va en el detalle
+        $loans = Loan::with('customer:id,name,second_name,last_name,maiden_name')->withCount('payment')->orderBy('id', 'desc')->paginate()
+            ->through(fn (Loan $loan) => [
+                'id' => $loan->id,
+                'customer' => ['id' => $loan->customer->id, 'full_name' => $loan->customer->full_name],
+                'score' => $loan->score,
+                'amount' => $loan->amount,
+                'term' => $loan->term,
+                'purpose' => $loan->purpose,
+                'approved_at' => $loan->approved_at,
+                'reject_at' => $loan->reject_at,
+                'paid_at' => $loan->paid_at,
+                'payment_count' => $loan->payment_count,
+            ]);
+
         return Inertia::render('Loans/LoansAgentView', [
             'loans' => $loans,
             'message' => session('message'),
@@ -42,20 +56,17 @@ class LoansController extends Controller
         ]);
     }
 
-    /** Cuenta de acceso del cliente (solo para administrador/asesor). */
+    /** Cuenta de acceso del cliente: solo el correo; la contraseña nunca se muestra ni se guarda de forma recuperable. */
     private function accountInfo($customer): ?array
     {
         if (! $customer?->user_id) {
             return null;
         }
 
-        return [
-            'email' => optional(User::find($customer->user_id))->email ?? $customer->email,
-            'password' => CreateCustomerAccountAction::readPassword($customer),
-        ];
+        return ['email' => optional(User::find($customer->user_id))->email ?? $customer->email];
     }
 
-    public function resetAccountPassword($id, CreateCustomerAccountAction $createAccount)
+    public function inviteAccount($id, CreateCustomerAccountAction $createAccount)
     {
         $loan = Loan::with('customer')->findOrFail($id);
 
@@ -63,12 +74,16 @@ class LoansController extends Controller
             return new JsonResponse(['message' => 'La solicitud debe estar aprobada y el cliente tener correo'], 422);
         }
 
-        $password = $createAccount->resetPassword($loan->customer);
+        try {
+            $createAccount->invite($loan->customer);
+        } catch (\Throwable $e) {
+            report($e);
 
-        return new JsonResponse([
-            'message' => 'Se generó una nueva contraseña',
-            'account' => ['email' => $loan->customer->email, 'password' => $password],
-        ]);
+            return new JsonResponse(['message' => 'No se pudo enviar el correo de invitación'], 500);
+        }
+        AuditLogger::record('account.invited', $loan->customer, $loan->id);
+
+        return new JsonResponse(['message' => "Se envió la invitación a {$loan->customer->email}"]);
     }
 
     public function update(Request $request, $id, CreateCustomerAccountAction $createAccount, GenerateLoanDocumentsAction $generateDocuments)
@@ -86,6 +101,7 @@ class LoansController extends Controller
 
         if ($request->status == 'rejected') {
             $loan->update(['reject_at' => now(), 'reject_reason' => $request->reason]);
+            AuditLogger::record('loan.rejected', $loan, $loan->id, note: $request->reason);
 
             return new JsonResponse(['loan' => $loan, 'message' => 'La solicitud fue rechazada']);
         }
@@ -126,6 +142,20 @@ class LoansController extends Controller
                 $createAccount->handle($loan->customer);
                 $generateDocuments->handle($loan);
             });
+
+            AuditLogger::record('loan.approved', $loan, $loan->id, after: ['amount' => (float) $loan->fresh()->amount, 'term' => (int) $loan->fresh()->term]);
+            if ($adjustments) {
+                AuditLogger::record('loan.conditions_changed', $loan, $loan->id,
+                    before: ['amount' => (float) ($adjustments['requested_amount'] ?? $loan->amount), 'term' => (int) ($adjustments['requested_term'] ?? $loan->term)],
+                    after: ['amount' => (float) $loan->fresh()->amount, 'term' => (int) $loan->fresh()->term]);
+            }
+
+            // La invitación va fuera de la transacción: si el correo falla, la aprobación no se pierde
+            try {
+                $createAccount->invite($loan->customer);
+            } catch (\Throwable $e) {
+                report($e);
+            }
         } catch (\Throwable $e) {
             report($e);
 
@@ -211,6 +241,13 @@ class LoansController extends Controller
             ]));
         }
 
+        AuditLogger::record('loan.plan_saved', $payment, $loan->id, after: [
+            'amount' => (float) $request->amount,
+            'months' => count($paymentTable['payments']),
+            'annual_rate' => (float) $request->annual_rate,
+            'opening_fees' => (float) $request->opening_fees,
+        ]);
+
         // Si el préstamo ya está aprobado, la documentación (carátula y tabla de amortización) se actualiza con este plan
         $message = 'Se ha guardado correctamente la tabla de pagos';
         if ($loan->approved_at) {
@@ -276,7 +313,9 @@ class LoansController extends Controller
                 'name' => $documentsName[$index],
                 'type' => $documentsType[$index],
                 'path' => $path,
+                'uploaded_by' => $request->user()->id,
             ]);
+            AuditLogger::record('document.uploaded', $document, $loan->id, note: $documentsName[$index]);
 
             $uploadedDocuments[] = $document;
         }
@@ -290,10 +329,17 @@ class LoansController extends Controller
 
     public function destroyDocument($id, $documentId)
     {
-        $document = Loan::findOrFail($id)->documentations()->findOrFail($documentId);
+        $loan = Loan::findOrFail($id);
+        $document = $loan->documentations()->findOrFail($documentId);
+
+        // Con el crédito aprobado el expediente es parte del contrato: solo se agregan versiones nuevas
+        if ($loan->approved_at) {
+            return new JsonResponse(['message' => 'El préstamo ya fue aprobado: sus documentos no se pueden eliminar. Sube una versión nueva si necesitas reemplazarlo.'], 422);
+        }
 
         Storage::disk(config('filesystems.documents'))->delete($document->path);
         $document->delete();
+        AuditLogger::record('document.deleted', $document, $loan->id, note: $document->name);
 
         return new JsonResponse(['message' => 'Documento eliminado correctamente']);
     }

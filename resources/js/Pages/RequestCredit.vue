@@ -50,7 +50,7 @@ export default {
             { name: 'Información Civil', component: 'CivilInfo' },
             { name: 'Situación Laboral', component: 'Employment' },
             { name: 'Préstamo', component: 'Loan' },
-            { name: 'Solicitud Finilizada', component: 'RequestFinished' },
+            { name: 'Solicitud finalizada', component: 'RequestFinished' },
         ];
 
         const currentComponent = computed(

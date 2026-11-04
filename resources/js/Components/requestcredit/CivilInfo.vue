@@ -77,7 +77,7 @@
                 </div>
                 <FormInput
                     v-model="form.economic_dependents"
-                    label="Número de dependientes economicos"
+                    label="Número de dependientes económicos"
                     required
                     :error="errors.economic_dependents"
                     type="number"

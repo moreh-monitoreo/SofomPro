@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\LoanProduct;
+use App\Services\AuditLogger;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -47,7 +48,10 @@ class LoanProductController extends Controller
             return back()->withErrors(['amount_step' => 'La diferencia entre el monto máximo y el mínimo debe ser múltiplo del incremento.']);
         }
 
-        LoanProduct::updateOrCreate(['type' => $type], $data);
+        $product = LoanProduct::forType($type);
+        $before = $product->only(array_keys($data));
+        $product = LoanProduct::updateOrCreate(['type' => $type], $data);
+        AuditLogger::record('product.updated', $product, before: $before, after: $product->only(array_keys($data)), note: $type);
 
         return back()->with('message', 'Producto actualizado. Los cambios ya se reflejan en el simulador y en los nuevos préstamos.');
     }

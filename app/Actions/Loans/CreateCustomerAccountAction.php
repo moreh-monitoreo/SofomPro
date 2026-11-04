@@ -2,17 +2,18 @@
 
 namespace App\Actions\Loans;
 
+use App\Mail\AccountInvitation;
 use App\Models\Customer;
 use App\Models\User;
-use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 
 class CreateCustomerAccountAction
 {
     /**
      * Crea (o reutiliza) la cuenta de usuario del cliente y la vincula con su perfil.
-     * La contraseña inicial se guarda cifrada para que el administrador la consulte en el perfil;
-     * por ahora no se envía nada al cliente.
+     * La cuenta nace con una contraseña aleatoria que nadie conoce; el cliente la define con la invitación.
      */
     public function handle(Customer $customer): User
     {
@@ -20,13 +21,11 @@ class CreateCustomerAccountAction
             ?? User::where('email', $customer->email)->first();
 
         if (! $user) {
-            $plain = $this->newPassword();
             $user = User::create([
                 'name' => $customer->full_name,
                 'email' => $customer->email,
-                'password' => $plain,
+                'password' => Str::random(40),
             ]);
-            $customer->update(['account_password' => Crypt::encryptString($plain)]);
         }
 
         if (! $user->hasRole('Customer')) {
@@ -38,32 +37,17 @@ class CreateCustomerAccountAction
         return $user;
     }
 
-    /** Genera una contraseña nueva, la aplica a la cuenta y la deja guardada cifrada. */
-    public function resetPassword(Customer $customer): string
+    /** Envía al cliente el enlace (con caducidad) para crear su contraseña. */
+    public function invite(Customer $customer): User
     {
         $user = $this->handle($customer);
-        $password = $this->newPassword();
-        $user->update(['password' => $password]);
-        $customer->update(['account_password' => Crypt::encryptString($password)]);
 
-        return $password;
-    }
+        $token = Password::broker()->createToken($user);
+        $url = route('password.reset', ['token' => $token, 'email' => $user->email]);
+        $hours = (int) round(config('auth.passwords.'.config('auth.defaults.passwords').'.expire') / 60);
 
-    public function newPassword(): string
-    {
-        return Str::password(10, letters: true, numbers: true, symbols: false, spaces: false);
-    }
+        Mail::to($user->email)->send(new AccountInvitation($user->name, $url, $hours));
 
-    public static function readPassword(Customer $customer): ?string
-    {
-        $raw = $customer->getRawOriginal('account_password');
-        if (! $raw) {
-            return null;
-        }
-        try {
-            return Crypt::decryptString($raw);
-        } catch (\Throwable) {
-            return null;
-        }
+        return $user;
     }
 }

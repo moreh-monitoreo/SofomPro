@@ -6,6 +6,7 @@ use App\Http\Responses\JsonResponse;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\PaymentDetail;
+use App\Services\AuditLogger;
 use App\Services\LoanCalculator;
 use App\Services\LoanPortfolio;
 use App\Services\PaymentRegistrar;
@@ -54,6 +55,13 @@ class PortfolioController extends Controller
             return JsonResponse::error('Esa cuota ya estaba pagada.', 409);
         }
 
+        AuditLogger::record('payment.registered', $detail, $loan->id, after: [
+            'number' => $detail->number,
+            'method' => $data['method'],
+            'reference' => $data['reference'] ?? null,
+            'amount' => isset($data['amount']) ? (float) $data['amount'] : (float) $detail->monthly_payment,
+        ], note: $data['notes'] ?? null);
+
         $loan->refresh()->load('payment.details');
 
         return JsonResponse::success([
@@ -90,6 +98,7 @@ class PortfolioController extends Controller
         }
 
         $loan->forceFill(['validation_started_at' => now()])->save();
+        AuditLogger::record('loan.validation_started', $loan, $loan->id);
 
         return JsonResponse::success($loan->fresh(), 'La solicitud pasó a validación.');
     }
@@ -110,6 +119,7 @@ class PortfolioController extends Controller
         $loan->forceFill([
             'disbursed_at' => isset($data['disbursed_at']) ? \Carbon\Carbon::parse($data['disbursed_at'])->setTimeFrom(now()) : now(),
         ])->save();
+        AuditLogger::record('loan.disbursed', $loan, $loan->id, after: ['disbursed_at' => (string) $loan->fresh()->disbursed_at]);
 
         return JsonResponse::success($loan->fresh(), 'Desembolso registrado.');
     }
