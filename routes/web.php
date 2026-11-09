@@ -20,6 +20,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\RequestsController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\DocumentTypeController;
+use App\Models\User;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -48,6 +49,7 @@ Route::prefix('request-credit')->middleware('throttle:60,1')->group(function () 
         Route::post('customer/{customer}/employment', [RequestCreditController::class, 'createemployment']);
         Route::post('customer/{customer}/employment/update', [RequestCreditController::class, 'updateemployment']);
         Route::post('customer/{customer}/loan', [RequestCreditController::class, 'storeloan']);
+        Route::post('customer/{customer}/references', [RequestCreditController::class, 'references']);
         Route::post('customer/{customer}/documents', [RequestCreditController::class, 'documents']);
     });
 });
@@ -65,7 +67,7 @@ Route::middleware(['auth', 'two-factor'])->group(function () {
     Route::get('customers/{customer}/loans/{loan}/payments', [CustomerController::class, 'payments'])->name('loans.show.payments');
 });
 
-Route::middleware(['auth', 'two-factor', 'role:Administrator|Advisor'])->group(function () {
+Route::middleware(['auth', 'two-factor', 'role:'.implode('|', User::STAFF_ROLES)])->group(function () {
     Route::get('loans', [LoansController::class, 'index'])->name('loans.index');
     Route::get('loans/{id}', [LoansController::class, 'show'])->name('loans.show')->where('id', '[0-9]+');
     Route::put('loans/{id}', [LoansController::class, 'update'])->name('loans.update')->where('id', '[0-9]+');
@@ -79,7 +81,10 @@ Route::middleware(['auth', 'two-factor', 'role:Administrator|Advisor'])->group(f
     Route::get('loans/history', [LoansController::class, 'history'])->name('loans.history');
     Route::post('loans/{id}/preview', [PortfolioController::class, 'preview'])->name('loans.preview')->whereNumber('id');
     Route::post('loans/{id}/validation', [PortfolioController::class, 'startValidation'])->name('loans.validation')->whereNumber('id');
-    Route::post('loans/{id}/disburse', [PortfolioController::class, 'disburse'])->name('loans.disburse')->whereNumber('id');
+    Route::post('loans/{id}/validate', [PortfolioController::class, 'validateRequest'])->middleware('role:'.implode('|', User::VALIDATOR_ROLES))->name('loans.validate')->whereNumber('id');
+    Route::post('loans/{id}/disburse', [PortfolioController::class, 'disburse'])->middleware('role:'.implode('|', User::APPROVER_ROLES))->name('loans.disburse')->whereNumber('id');
+    Route::post('loans/{id}/payments/receive', [PortfolioController::class, 'receivePayment'])->name('loans.payments.receive')->whereNumber('id');
+    Route::get('loans/{id}/payoff', [PortfolioController::class, 'payoff'])->name('loans.payoff')->whereNumber('id');
     Route::post('loans/{id}/payments/{detail}/register', [PortfolioController::class, 'registerPayment'])->name('loans.payments.register')->whereNumber(['id', 'detail']);
 
     Route::get('pipeline', [PipelineController::class, 'index'])->name('pipeline.index');
@@ -104,6 +109,7 @@ Route::middleware(['auth', 'two-factor', 'role:Administrator'])->prefix('admin')
     Route::get('audit', [AuditLogController::class, 'index'])->name('audit.index');
     Route::put('loan-products/{type}', [LoanProductController::class, 'update'])->name('loan-products.update');
     Route::post('payments/{detail}/revert', [PaymentCorrectionController::class, 'revert'])->name('payments.revert')->whereNumber('detail');
+    Route::post('movements/{movement}/revert', [PaymentCorrectionController::class, 'revertMovement'])->name('movements.revert')->whereNumber('movement');
 });
 
 Route::middleware('auth')->prefix('two-factor')->name('two-factor.')->group(function () {

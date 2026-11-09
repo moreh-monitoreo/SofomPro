@@ -34,7 +34,7 @@ class TwoFactorAuth
 
     public static function appliesTo(User $user): bool
     {
-        return self::required() && $user->hasAnyRole(['Administrator', 'Advisor']);
+        return self::required() && $user->isStaff();
     }
 
     public function newSecret(): string

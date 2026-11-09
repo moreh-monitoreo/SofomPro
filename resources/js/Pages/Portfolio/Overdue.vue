@@ -7,7 +7,7 @@ import { Head } from '@inertiajs/vue3';
 defineProps({
     rows: { type: Array, required: true },
     totals: { type: Object, required: true },
-    graceDays: { type: Number, default: 0 },
+    graceDays: { type: Object, default: () => ({}) },
 });
 
 const severity = (days) => (days > 30 ? 'bg-red-600 text-white' : days > 7 ? 'bg-orange-500 text-white' : 'bg-yellow-200 text-yellow-900');
@@ -24,7 +24,7 @@ const severity = (days) => (days > 30 ? 'bg-red-600 text-white' : days > 7 ? 'bg
                         <div>
                             <CardTitle class="text-2xl">Cartera vencida</CardTitle>
                             <CardDescription>
-                                Clientes con cuotas pasadas de su fecha límite sin pagar<span v-if="graceDays > 0"> (con {{ graceDays }} días de gracia)</span>.
+                                Clientes con cuotas pasadas de su fecha límite sin pagar<span v-if="graceDays.NORMAL > 0 || graceDays.FUNERARIO > 0"> (días de gracia: personal {{ graceDays.NORMAL ?? 0 }}, con garantía {{ graceDays.FUNERARIO ?? 0 }})</span>.
                             </CardDescription>
                         </div>
                         <a
@@ -78,7 +78,10 @@ const severity = (days) => (days > 30 ? 'bg-red-600 text-white' : days > 7 ? 'bg
                                         <a v-if="row.email" :href="`mailto:${row.email}`" class="block text-xs text-blue-600 hover:underline">{{ row.email }}</a>
                                     </td>
                                     <td class="px-4 py-3">{{ row.overdue_installments }}</td>
-                                    <td class="px-4 py-3 font-semibold text-gray-900">$ {{ currency(row.overdue_amount) }}</td>
+                                    <td class="px-4 py-3 font-semibold text-gray-900">
+                                        $ {{ currency(row.overdue_amount) }}
+                                        <span v-if="row.moratory_amount > 0" class="block text-xs font-normal text-red-700">+ $ {{ currency(row.moratory_amount) }} de moratorios con IVA</span>
+                                    </td>
                                     <td class="px-4 py-3">
                                         <span :class="['rounded px-2.5 py-0.5 text-xs font-semibold', severity(row.days_overdue)]">{{ row.days_overdue }} días</span>
                                     </td>

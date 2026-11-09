@@ -38,7 +38,7 @@ class AccountInvitationTest extends TestCase
             'rfc' => 'GOML900101AB1',
         ]);
 
-        return Loan::create(['customer_id' => $customer->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio']);
+        return $this->readyForApproval(Loan::create(['customer_id' => $customer->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio']));
     }
 
     private function approve(Loan $loan): void

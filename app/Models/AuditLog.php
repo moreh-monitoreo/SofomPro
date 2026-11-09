@@ -15,7 +15,9 @@ class AuditLog extends Model
 
     /** Acciones registradas y su descripción para el administrador. */
     public const ACTIONS = [
+        'loan.submitted' => 'El cliente envió la solicitud',
         'loan.validation_started' => 'Pasó a validación',
+        'loan.validated' => 'Validó la solicitud (Buró y PLD)',
         'loan.approved' => 'Aprobó la solicitud',
         'loan.rejected' => 'Rechazó la solicitud',
         'loan.conditions_changed' => 'Cambió monto o plazo',

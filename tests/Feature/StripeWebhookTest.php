@@ -13,10 +13,14 @@ class StripeWebhookTest extends TestCase
 
     private const SECRET = 'whsec_test_secret';
 
+    /** Al 21/oct/2026 la primera cuota (1,160) vence desde el 5/sep: 46 días de moratorios con IVA (72.21). */
+    private const DUE_CENTS = 123221;
+
     protected function setUp(): void
     {
         parent::setUp();
         config(['services.stripe.webhook_secret' => self::SECRET]);
+        $this->travelTo(\Carbon\Carbon::parse('2026-10-21 12:00:00'));
     }
 
     private function signed(array $event, string $secret = self::SECRET): array
@@ -38,10 +42,10 @@ class StripeWebhookTest extends TestCase
                 'id' => 'cs_test_123',
                 'object' => 'checkout.session',
                 'payment_status' => 'paid',
-                'amount_total' => (int) round($detail->monthly_payment * 100),
+                'amount_total' => self::DUE_CENTS,
                 'currency' => 'mxn',
                 'payment_intent' => 'pi_test_123',
-                'metadata' => ['payment_detail_id' => (string) $detail->id],
+                'metadata' => ['payment_detail_id' => (string) $detail->id, 'expected_cents' => (string) self::DUE_CENTS],
             ], $override)],
         ];
     }
@@ -140,6 +144,14 @@ class StripeWebhookTest extends TestCase
         $stranger = $this->userWithRole('Customer');
 
         $this->actingAs($stranger)->postJson('/create-checkout-session', ['payment_id' => $detail->id])->assertForbidden();
+    }
+
+    public function test_checkout_charges_the_oldest_installment_with_its_moratory_interest(): void
+    {
+        ['details' => $details, 'owner' => $owner] = $this->approvedLoan();
+
+        $this->actingAs($owner)->postJson('/create-checkout-session', ['payment_id' => $details[1]->id])
+            ->assertStatus(422)->assertJsonFragment(['message' => 'Primero paga la cuota 1.']);
     }
 
     public function test_an_already_paid_installment_cannot_be_charged_again(): void

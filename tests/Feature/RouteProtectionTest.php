@@ -26,7 +26,7 @@ class RouteProtectionTest extends TestCase
         'storage/{path}',
     ];
 
-    /** Rutas del equipo: requieren sesión y rol Administrator o Advisor. */
+    /** Rutas del equipo: requieren sesión y uno de los roles del equipo (User::STAFF_ROLES). */
     private const STAFF = [
         'loans', 'loans/*', 'customers/{id}', 'requests', 'requests/*', 'statistics/*', 'document-types', 'document-types/*',
         'pipeline', 'portfolio/*',
@@ -78,8 +78,9 @@ class RouteProtectionTest extends TestCase
             if (str_starts_with($uri, 'admin/') && $roles !== 'role:Administrator') {
                 $missing[] = "{$uri} debe exigir solo Administrator (tiene: ".($roles ?? 'nada').')';
             }
-            if ($this->uriIn($uri, self::STAFF) && ! in_array($roles, ['role:Administrator|Advisor', 'role:Administrator'], true)) {
-                $missing[] = "{$uri} debe exigir rol Administrator|Advisor (tiene: ".($roles ?? 'nada').')';
+            $staff = 'role:'.implode('|', \App\Models\User::STAFF_ROLES);
+            if ($this->uriIn($uri, self::STAFF) && ! in_array($roles, [$staff, 'role:Administrator'], true)) {
+                $missing[] = "{$uri} debe exigir los roles del equipo (tiene: ".($roles ?? 'nada').')';
             }
         }
 

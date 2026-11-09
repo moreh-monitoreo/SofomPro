@@ -14,7 +14,10 @@ class LoanProduct extends Model
 {
     public const TYPES = ['NORMAL', 'FUNERARIO'];
 
-    protected $fillable = ['type', 'name', 'annual_rate', 'opening_fee', 'iva', 'min_amount', 'max_amount', 'amount_step', 'min_term', 'max_term', 'active'];
+    /** Documentos que el cliente sube en su solicitud; son los obligatorios por defecto para aprobar. */
+    public const DEFAULT_DOCUMENTS = ['INE (frente)', 'INE (reverso)', 'Comprobante de domicilio', 'Estado de cuenta bancario'];
+
+    protected $fillable = ['type', 'name', 'annual_rate', 'opening_fee', 'iva', 'min_amount', 'max_amount', 'amount_step', 'min_term', 'max_term', 'active', 'moratory_rate', 'grace_days', 'early_payoff_penalty', 'min_forced_months', 'required_documents'];
 
     protected $casts = [
         'annual_rate' => 'float',
@@ -26,6 +29,11 @@ class LoanProduct extends Model
         'min_term' => 'integer',
         'max_term' => 'integer',
         'active' => 'boolean',
+        'moratory_rate' => 'float',
+        'grace_days' => 'integer',
+        'early_payoff_penalty' => 'float',
+        'min_forced_months' => 'integer',
+        'required_documents' => 'array',
     ];
 
     public static function defaults(string $type): array
@@ -44,6 +52,11 @@ class LoanProduct extends Model
             'min_term' => 6,
             'max_term' => 12,
             'active' => true,
+            'moratory_rate' => 42.0,
+            'grace_days' => (int) config('promas.overdue_grace_days', 0),
+            'early_payoff_penalty' => 3.0,
+            'min_forced_months' => 0,
+            'required_documents' => self::DEFAULT_DOCUMENTS,
         ];
     }
 
@@ -55,6 +68,18 @@ class LoanProduct extends Model
         $product = Schema::hasTable('loan_products') ? static::where('type', $type)->first() : null;
 
         return $product ?? new static(static::defaults($type));
+    }
+
+    /** Tipos de documento que deben estar en el expediente para aprobar. */
+    public function requiredDocuments(): array
+    {
+        return $this->required_documents ?? self::DEFAULT_DOCUMENTS;
+    }
+
+    /** Tasa moratoria diaria: anual entre 360 (cláusula octava). */
+    public function dailyMoratoryRate(): float
+    {
+        return $this->moratory_rate / 100 / 360;
     }
 
     public function monthlyRate(): float

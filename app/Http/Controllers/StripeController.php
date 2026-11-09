@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CreateStripeSessionPaymentRequest;
 use App\Models\PaymentDetail;
+use App\Services\LoanLedger;
 use Illuminate\Http\Request;
 
 class StripeController extends Controller
@@ -13,7 +14,7 @@ class StripeController extends Controller
         $paymentDetail = PaymentDetail::with('payment.loan.customer')->findOrFail($request->payment_id);
 
         $user = $request->user();
-        $isStaff = $user->hasAnyRole(['Administrator', 'Advisor']);
+        $isStaff = $user->isStaff();
         if (! $isStaff && $paymentDetail->payment?->loan?->customer?->user_id !== $user->id) {
             abort(403, 'Esta cuota no pertenece a tu cuenta.');
         }
@@ -21,6 +22,14 @@ class StripeController extends Controller
         if ($paymentDetail->status === 'S') {
             return response()->json(['message' => 'Esta cuota ya está pagada.'], 422);
         }
+
+        // Los pagos se aplican a lo más antiguo primero (prelación del contrato), así que se cobra la cuota pendiente más antigua
+        $loan = $paymentDetail->payment->loan->load('payment.details');
+        $oldest = $loan->payment->details->where('status', '!=', 'S')->sortBy('number')->first();
+        if ($oldest->id !== $paymentDetail->id) {
+            return response()->json(['message' => "Primero paga la cuota {$oldest->number}."], 422);
+        }
+        $amount = app(LoanLedger::class)->amountToCover($loan, $paymentDetail, now());
 
         $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
 
@@ -32,13 +41,13 @@ class StripeController extends Controller
                     'product_data' => [
                         'name' => "Pago de la cuota {$paymentDetail->number} ({$paymentDetail->month}/{$paymentDetail->year})",
                     ],
-                    'unit_amount' => (int) round($paymentDetail->monthly_payment * 100),
+                    'unit_amount' => (int) round($amount * 100),
                 ],
                 'quantity' => 1,
             ]],
             'mode' => 'payment',
             'client_reference_id' => (string) $paymentDetail->id,
-            'metadata' => ['payment_detail_id' => (string) $paymentDetail->id],
+            'metadata' => ['payment_detail_id' => (string) $paymentDetail->id, 'expected_cents' => (string) (int) round($amount * 100)],
             'success_url' => url('/success'),
             'cancel_url' => url('/cancel'),
         ]);

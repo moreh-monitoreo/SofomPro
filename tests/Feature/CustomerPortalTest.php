@@ -42,11 +42,12 @@ class CustomerPortalTest extends TestCase
     public function test_the_balance_updates_when_a_payment_is_registered(): void
     {
         $built = $this->approvedLoan();
-        app(PaymentRegistrar::class)->markPaid($built['details'][0], 'STRIPE', 'pi_1', 1160);
+        app(PaymentRegistrar::class)->markPaid($built['details'][0], 'STRIPE', 'pi_1');
 
+        // La cuota 1 se pagó con sus 46 días de moratorios (62.25 + IVA 9.96)
         $this->actingAs($built['owner'])->get('/dashboard')->assertInertia(fn (Assert $page) => $page
             ->where('loans.0.summary.pending_amount', 2320)
-            ->where('loans.0.summary.paid_amount', 1160)
+            ->where('loans.0.summary.paid_amount', 1232.21)
             ->where('loans.0.summary.installments_paid', 1)
             ->where('loans.0.summary.overdue_installments', 1));
     }
@@ -59,6 +60,9 @@ class CustomerPortalTest extends TestCase
 
         $label = fn () => $this->actingAs($owner)->get('/dashboard')->viewData('page')['props']['loans'][0]['summary']['customer_stage_label'];
 
+        $this->assertSame('Solicitud incompleta', $label());
+
+        $loan->forceFill(['submitted_at' => now()])->save();
         $this->assertSame('En revisión', $label());
 
         $loan->forceFill(['validation_started_at' => now()])->save();
@@ -90,7 +94,7 @@ class CustomerPortalTest extends TestCase
     {
         $this->approvedLoan();
         $received = $this->approvedLoan();
-        $received['loan']->forceFill(['approved_at' => null])->save();
+        $received['loan']->forceFill(['approved_at' => null, 'submitted_at' => now()])->save();
 
         $this->actingAs($this->userWithRole('Advisor'))->get('/dashboard')->assertInertia(fn (Assert $page) => $page
             ->where('staff.received', 1)
@@ -121,7 +125,7 @@ class CustomerPortalTest extends TestCase
 
     private function pay(array $built, int $index = 0, string $method = 'TRANSFERENCIA'): void
     {
-        app(PaymentRegistrar::class)->markPaid($built['details'][$index], $method, 'SPEI-998877', 1160);
+        app(PaymentRegistrar::class)->markPaid($built['details'][$index], $method, 'SPEI-998877');
     }
 
     public function test_the_owner_can_download_a_pdf_receipt_of_a_paid_installment(): void

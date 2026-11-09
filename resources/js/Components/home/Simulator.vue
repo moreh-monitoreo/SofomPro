@@ -56,6 +56,11 @@ onMounted(async () => {
     }
 });
 
+// La solicitud se abre con el monto, el plazo y el producto simulados
+const requestUrl = computed(() =>
+    route('site.requestcredit', { monto: form.value.amountCredit, plazo: form.value.quantityPayments, tipo: form.value.type }),
+);
+
 function adjust(direction) {
     const p = product.value;
     form.value.amountCredit = Math.min(Math.max(Number(form.value.amountCredit) + direction * p.amount_step, p.min_amount), p.max_amount);
@@ -224,6 +229,15 @@ async function submitForm() {
                     <dd class="font-semibold text-gray-900">{{ money(result.amount) }}</dd>
                 </div>
             </dl>
+
+            <div class="mt-6 flex justify-center">
+                <a
+                    :href="requestUrl"
+                    class="rounded-md bg-vermilion-500 px-6 py-3 text-base font-semibold text-white shadow transition-colors duration-200 hover:bg-vermilion-600"
+                >
+                    Solicitar con estas condiciones
+                </a>
+            </div>
 
             <h4 class="mt-8 text-base font-bold text-gray-900">Tabla de amortización</h4>
             <div class="mt-3 overflow-x-auto rounded-lg border border-gray-200">

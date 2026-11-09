@@ -96,8 +96,19 @@ class AuthSiteController extends Controller
         return response()->json(['products' => $products]);
     }
 
-    public function requestcredit()
+    /** Solicitud de crédito; si viene del simulador, llega con el monto, el plazo y el producto elegidos. */
+    public function requestcredit(\Illuminate\Http\Request $request)
     {
-        return Inertia::render('RequestCredit');
+        $simulation = null;
+        if ($request->filled(['monto', 'plazo'])) {
+            $product = \App\Models\LoanProduct::forType($request->query('tipo'));
+            $amount = (int) $request->query('monto');
+            $term = (int) $request->query('plazo');
+            if (in_array($amount, $product->amounts(), true) && in_array($term, $product->terms(), true)) {
+                $simulation = ['type' => $product->type, 'amount' => $amount, 'term' => $term];
+            }
+        }
+
+        return Inertia::render('RequestCredit', ['simulation' => $simulation]);
     }
 }

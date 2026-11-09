@@ -5,6 +5,7 @@ import Employment from '@/Components/requestcredit/Employment.vue';
 import Documents from '@/Components/requestcredit/Documents.vue';
 import EmploymentDetails from '@/Components/requestcredit/EmploymentDetails.vue';
 import Loan from '@/Components/requestcredit/Loan.vue';
+import References from '@/Components/requestcredit/References.vue';
 import PersonalInfo from '@/Components/requestcredit/PersonalInfo.vue';
 import RequestFinished from '@/Components/requestcredit/RequestFinished.vue';
 import Footer from '@/Layouts/partials/Footer.vue';
@@ -25,12 +26,18 @@ export default {
         Employment,
         EmploymentDetails,
         Loan,
+        References,
         Documents,
         RequestFinished,
     },
 
-    setup() {
+    props: {
+        simulation: { type: Object, default: null },
+    },
+
+    setup(props) {
         const store = useRequestCreditStore();
+        store.applySimulation(props.simulation);
         const currentStep = ref(1);
         const formData = ref({
             id: 7,
@@ -215,9 +222,12 @@ export default {
                             <Loan />
                         </div>
                         <div v-else-if="store.currentStep === 6">
-                            <Documents />
+                            <References />
                         </div>
                         <div v-else-if="store.currentStep === 7">
+                            <Documents />
+                        </div>
+                        <div v-else-if="store.currentStep === 8">
                             <RequestFinished />
                         </div>
                     </div>

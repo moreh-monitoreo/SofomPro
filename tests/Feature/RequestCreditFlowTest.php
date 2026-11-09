@@ -222,14 +222,100 @@ class RequestCreditFlowTest extends TestCase
         ], $override);
     }
 
-    private function requestWithLoan(): array
+    private const CLABE = '002180001234567896';
+
+    private function references(array $override = []): array
+    {
+        return array_merge([
+            'clabe' => self::CLABE,
+            'references' => [
+                ['name' => 'Carlos Ruiz', 'relationship' => 'Hermano', 'phone' => '6671112233'],
+                ['name' => 'Elena Soto', 'relationship' => 'Amiga', 'phone' => '6674445566'],
+            ],
+        ], $override);
+    }
+
+    private function requestWithLoan(bool $withReferences = true): array
     {
         $data = $this->startRequest();
         $this->postJson("/request-credit/customer/{$data['id']}/loan", [
             'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio', 'purpose_description' => 'x', 'type' => 'NORMAL',
         ])->assertCreated();
+        if ($withReferences) {
+            $this->postJson("/request-credit/customer/{$data['id']}/references", $this->references())->assertCreated();
+        }
 
         return $data;
+    }
+
+    public function test_the_request_is_incomplete_until_the_documents_are_sent(): void
+    {
+        config(['filesystems.documents' => 'local']);
+        Storage::fake('local');
+        $data = $this->requestWithLoan();
+        $loan = Loan::findOrFail($data['loan']['id']);
+
+        $this->assertSame('incomplete', $loan->stage);
+        $this->assertEquals(3000, $loan->requested_amount);
+        $this->assertSame(6, $loan->requested_term);
+
+        $this->post("/request-credit/customer/{$data['id']}/documents", $this->documents(), ['Accept' => 'application/json'])->assertCreated();
+
+        $this->assertSame('received', $loan->fresh()->stage);
+        $this->assertNotNull($loan->fresh()->submitted_at);
+    }
+
+    public function test_the_documents_step_requires_the_references_and_the_clabe(): void
+    {
+        config(['filesystems.documents' => 'local']);
+        Storage::fake('local');
+        $data = $this->requestWithLoan(false);
+
+        $this->post("/request-credit/customer/{$data['id']}/documents", $this->documents(), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonFragment(['message' => 'Primero captura tus referencias personales y tu cuenta CLABE.']);
+        $this->assertSame('incomplete', Loan::find($data['loan']['id'])->stage);
+    }
+
+    public function test_the_references_and_the_clabe_are_validated_and_stored(): void
+    {
+        $data = $this->requestWithLoan(false);
+        $url = "/request-credit/customer/{$data['id']}/references";
+
+        $this->postJson($url, $this->references(['clabe' => '002180001234567890']))->assertStatus(422)->assertJsonValidationErrors('clabe');
+        $this->postJson($url, $this->references(['clabe' => '1234']))->assertStatus(422)->assertJsonValidationErrors('clabe');
+        $this->postJson($url, $this->references(['references' => [['name' => 'Solo', 'relationship' => 'Primo', 'phone' => '6671112233']]]))
+            ->assertStatus(422)->assertJsonValidationErrors('references');
+        $this->postJson($url, $this->references(['references' => [
+            ['name' => 'Carlos', 'relationship' => 'Hermano', 'phone' => '667111'],
+            ['name' => 'Elena', 'relationship' => 'Amiga', 'phone' => '6674445566'],
+        ]]))->assertStatus(422)->assertJsonValidationErrors('references.0.phone');
+        // El teléfono de una referencia no puede ser el del propio cliente
+        $this->postJson($url, $this->references(['references' => [
+            ['name' => 'Carlos', 'relationship' => 'Hermano', 'phone' => '6671234567'],
+            ['name' => 'Elena', 'relationship' => 'Amiga', 'phone' => '6674445566'],
+        ]]))->assertStatus(422);
+
+        $this->postJson($url, $this->references(['clabe' => '0021 8000 1234 5678 96']))->assertCreated();
+        $this->postJson($url, $this->references())->assertCreated();
+
+        $customer = Customer::findOrFail($data['id']);
+        $this->assertSame(self::CLABE, $customer->clabe);
+        $this->assertSame(2, $customer->references()->count());
+    }
+
+    public function test_the_simulator_carries_the_amount_and_term_to_the_request(): void
+    {
+        $this->withoutVite();
+
+        $this->get('/prestamo-personal/solicitar?monto=5000&plazo=9&tipo=NORMAL')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('RequestCredit')->where('simulation', ['type' => 'NORMAL', 'amount' => 5000, 'term' => 9]));
+
+        // Valores fuera del producto se ignoran
+        $this->get('/prestamo-personal/solicitar?monto=999999&plazo=9')
+            ->assertInertia(fn ($page) => $page->where('simulation', null));
+        $this->get('/prestamo-personal/solicitar')
+            ->assertInertia(fn ($page) => $page->where('simulation', null));
     }
 
     public function test_the_four_required_documents_are_stored_in_the_documents_disk(): void

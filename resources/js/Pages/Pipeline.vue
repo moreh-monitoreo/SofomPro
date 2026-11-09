@@ -25,8 +25,10 @@ const links = computed(() => (Array.isArray(props.loans) ? [] : props.loans.link
 const total = computed(() => Object.values(props.counts).reduce((sum, n) => sum + n, 0));
 
 const badge = {
+    incomplete: 'bg-orange-50 text-orange-800',
     received: 'bg-gray-100 text-gray-800',
     in_validation: 'bg-blue-100 text-blue-800',
+    validated: 'bg-indigo-100 text-indigo-800',
     approved: 'bg-green-100 text-green-800',
     disbursed: 'bg-teal-100 text-teal-800',
     paid: 'bg-emerald-100 text-emerald-900',
@@ -34,8 +36,10 @@ const badge = {
 };
 
 const columnTop = {
+    incomplete: 'border-orange-300',
     received: 'border-gray-400',
     in_validation: 'border-blue-500',
+    validated: 'border-indigo-500',
     approved: 'border-green-500',
     disbursed: 'border-teal-500',
     paid: 'border-emerald-700',
@@ -197,7 +201,7 @@ const hasFilters = computed(() => search.value || type.value || overdue.value ||
                                     <td class="px-4 py-3">{{ loan.created_at }}</td>
                                     <td class="px-4 py-3 text-right">
                                         <a :href="route('loans.show', loan.id)" class="font-medium text-vermilion-600 hover:underline">Revisar</a>
-                                        <a v-if="loan.stage !== 'received' && loan.stage !== 'in_validation' && loan.stage !== 'rejected'" :href="route('loans.payments.index', loan.id)" class="ml-3 font-medium text-blue-600 hover:underline">Pagos</a>
+                                        <a v-if="['approved', 'disbursed', 'paid'].includes(loan.stage)" :href="route('loans.payments.index', loan.id)" class="ml-3 font-medium text-blue-600 hover:underline">Pagos</a>
                                     </td>
                                 </tr>
                             </tbody>

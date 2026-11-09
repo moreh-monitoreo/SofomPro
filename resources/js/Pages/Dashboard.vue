@@ -52,10 +52,12 @@ const goToPayments = (loan) => router.visit(route('loans.show.payments', { custo
                     <a :href="route('pipeline.index', { stage: 'received' })" class="rounded-xl border border-gray-200 bg-white p-4 transition hover:shadow-md">
                         <p class="text-sm text-gray-500">Solicitudes por atender</p>
                         <p class="text-3xl font-extrabold text-gray-900">{{ staff.received }}</p>
+                        <p v-if="staff.incomplete" class="mt-1 text-xs text-gray-500">{{ staff.incomplete }} más sin terminar (incompletas)</p>
                     </a>
                     <a :href="route('pipeline.index', { stage: 'in_validation' })" class="rounded-xl border border-gray-200 bg-white p-4 transition hover:shadow-md">
                         <p class="text-sm text-gray-500">En validación</p>
                         <p class="text-3xl font-extrabold text-blue-700">{{ staff.in_validation }}</p>
+                        <p v-if="staff.validated" class="mt-1 text-xs text-indigo-700">{{ staff.validated }} validadas, listas para aprobar</p>
                     </a>
                     <a :href="route('pipeline.index', { stage: 'approved' })" class="rounded-xl border border-gray-200 bg-white p-4 transition hover:shadow-md">
                         <p class="text-sm text-gray-500">Aprobadas sin desembolsar</p>

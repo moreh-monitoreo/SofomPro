@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Loan;
+use App\Models\LoanProduct;
 use App\Services\LoanPortfolio;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
@@ -22,7 +23,7 @@ class OverdueController extends Controller
                 'amount' => round($rows->sum('overdue_amount'), 2),
                 'installments' => $rows->sum('overdue_installments'),
             ],
-            'graceDays' => (int) config('promas.overdue_grace_days', 0),
+            'graceDays' => collect(LoanProduct::TYPES)->mapWithKeys(fn ($type) => [$type => LoanProduct::forType($type)->grace_days]),
         ]);
     }
 
@@ -33,11 +34,11 @@ class OverdueController extends Controller
         return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, ['Cliente', 'Teléfono', 'Correo', 'Préstamo', 'Cuotas vencidas', 'Monto vencido', 'Días de atraso', 'Primer vencimiento sin pagar']);
+            fputcsv($out, ['Cliente', 'Teléfono', 'Correo', 'Préstamo', 'Cuotas vencidas', 'Monto vencido', 'Moratorios con IVA', 'Días de atraso', 'Primer vencimiento sin pagar']);
             foreach ($rows as $row) {
                 fputcsv($out, [
                     $row['customer'], $row['phone'], $row['email'], $row['loan_id'], $row['overdue_installments'],
-                    number_format($row['overdue_amount'], 2, '.', ''), $row['days_overdue'], $row['oldest_due_date'],
+                    number_format($row['overdue_amount'], 2, '.', ''), number_format($row['moratory_amount'], 2, '.', ''), $row['days_overdue'], $row['oldest_due_date'],
                 ]);
             }
             fclose($out);
@@ -53,7 +54,7 @@ class OverdueController extends Controller
             ->map(function (Loan $loan) use ($portfolio) {
                 $summary = $portfolio->summary($loan);
                 $oldest = $loan->payment->details->where('status', '!=', 'S')->sortBy('number')
-                    ->first(fn ($d) => $d->isOverdue());
+                    ->first(fn ($d) => $d->isOverdue(null, $loan->product()->grace_days));
 
                 return [
                     'loan_id' => $loan->id,
@@ -63,6 +64,7 @@ class OverdueController extends Controller
                     'email' => $loan->customer->email,
                     'overdue_installments' => $summary['overdue_installments'],
                     'overdue_amount' => $summary['overdue_amount'],
+                    'moratory_amount' => $summary['moratory_amount'],
                     'days_overdue' => $summary['days_overdue'],
                     'oldest_due_date' => $oldest?->dueDate()->toDateString(),
                     'pending_amount' => $summary['pending_amount'],

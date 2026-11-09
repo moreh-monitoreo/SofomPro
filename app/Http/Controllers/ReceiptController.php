@@ -24,12 +24,12 @@ class ReceiptController extends Controller
         abort_unless($detail, 404);
 
         $user = auth()->user();
-        $isStaff = $user->hasAnyRole(['Administrator', 'Advisor']);
+        $isStaff = $user->isStaff();
         abort_unless($isStaff || $loan->customer->user_id === $user->id, 403);
         abort_unless($detail->status === 'S', 404, 'Esta cuota todavía no está pagada.');
 
         $installments = $loan->payment->details->sortBy('number');
-        $paidTotal = $installments->where('status', 'S')->sum(fn ($d) => (float) $d->monthly_payment);
+        $paidTotal = $installments->sum(fn ($d) => (float) ($d->payment_total ?? ($d->status === 'S' ? $d->monthly_payment : 0)));
         $vat = round((float) $detail->monthly_payment - (float) $detail->principal_payment - (float) $detail->interest_payment, 2);
 
         $number = sprintf('REC-%06d-%02d', $loan->id, $detail->number);
@@ -46,7 +46,7 @@ class ReceiptController extends Controller
             'vat' => $vat,
             'method' => self::METHOD_LABELS[$detail->payment_method] ?? Str::title((string) $detail->payment_method),
             'paidTotal' => round($paidTotal, 2),
-            'pendingTotal' => round($installments->where('status', '!=', 'S')->sum(fn ($d) => (float) $d->monthly_payment), 2),
+            'pendingTotal' => round($installments->where('status', '!=', 'S')->sum(fn ($d) => $d->remainingTotal()), 2),
         ])->setPaper('letter');
 
         return $pdf->download("{$number}.pdf");

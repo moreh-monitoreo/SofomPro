@@ -32,7 +32,7 @@ class PipelineTest extends TestCase
             'curp' => strtoupper(substr(md5($name), 0, 18)),
         ]);
 
-        return Loan::create($attrs + ['customer_id' => $c->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6]);
+        return Loan::create($attrs + ['customer_id' => $c->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'submitted_at' => now()]);
     }
 
     /** Una solicitud en cada etapa, más una con mora. */
@@ -44,11 +44,13 @@ class PipelineTest extends TestCase
         $disbursed = $this->loan('Dolores', ['approved_at' => now(), 'disbursed_at' => now()], ['phone' => '6671112233']);
         $paid = $this->loan('Paola', ['approved_at' => now(), 'disbursed_at' => now(), 'paid_at' => now()]);
         $rejected = $this->loan('Rosa', ['reject_at' => now()], []);
+        $incomplete = $this->loan('Irene', ['submitted_at' => null]);
+        $validated = $this->loan('Vera', ['validation_started_at' => now(), 'validated_at' => now()]);
         $guarantee = $this->loan('Gloria', ['type' => 'FUNERARIO']);
         $overdue = $this->approvedLoan()['loan'];
         $overdue->forceFill(['disbursed_at' => now()])->save();
 
-        return compact('received', 'validation', 'approved', 'disbursed', 'paid', 'rejected', 'guarantee', 'overdue');
+        return compact('received', 'validation', 'approved', 'disbursed', 'paid', 'rejected', 'guarantee', 'overdue', 'incomplete', 'validated');
     }
 
     private function page(array $query = [], string $role = 'Advisor')
@@ -63,8 +65,10 @@ class PipelineTest extends TestCase
 
         $this->page()->assertInertia(fn (Assert $page) => $page
             ->component('Pipeline')
+            ->where('counts.incomplete', 1)
             ->where('counts.received', 2)
             ->where('counts.in_validation', 1)
+            ->where('counts.validated', 1)
             ->where('counts.approved', 1)
             ->where('counts.disbursed', 2)
             ->where('counts.paid', 1)
@@ -104,7 +108,7 @@ class PipelineTest extends TestCase
         $this->page(['type' => 'FUNERARIO'])->assertInertia(fn (Assert $page) => $page->has('loans.data', 1)->where('loans.data.0.customer.full_name', 'Gloria Prueba'));
 
         $this->page(['from' => '2027-01-01'])->assertInertia(fn (Assert $page) => $page->has('loans.data', 0));
-        $this->page(['from' => '2026-10-01', 'to' => '2026-10-31'])->assertInertia(fn (Assert $page) => $page->has('loans.data', 8));
+        $this->page(['from' => '2026-10-01', 'to' => '2026-10-31'])->assertInertia(fn (Assert $page) => $page->has('loans.data', 10));
     }
 
     public function test_the_overdue_filter_shows_only_loans_with_arrears(): void
@@ -125,7 +129,7 @@ class PipelineTest extends TestCase
 
         $this->page(['view' => 'board'])->assertInertia(fn (Assert $page) => $page
             ->component('Pipeline')
-            ->has('loans', 8)
+            ->has('loans', 10)
             ->where('filters.view', 'board'));
     }
 

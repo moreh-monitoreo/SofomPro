@@ -31,7 +31,7 @@ class VisibleFixesTest extends TestCase
             'rfc' => 'GOML900101AB1',
         ]);
 
-        return Loan::create(['customer_id' => $customer->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio']);
+        return Loan::create(['customer_id' => $customer->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio', 'submitted_at' => now()]);
     }
 
     public function test_the_payment_statistics_open_even_when_an_approved_loan_has_no_plan(): void

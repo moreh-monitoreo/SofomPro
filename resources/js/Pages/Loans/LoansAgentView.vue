@@ -42,9 +42,6 @@ if (props.message) {
                             >
                                 <tr>
                                     <th scope="col" class="px-6 py-4">Nombre</th>
-                                    <th scope="col" class="px-6 py-4">
-                                        Puntuación
-                                    </th>
                                     <th scope="col" class="px-6 py-4">Monto</th>
                                     <th scope="col" class="px-6 py-4">Meses</th>
                                     <th scope="col" class="px-6 py-4">Proposito</th>
@@ -67,7 +64,6 @@ if (props.message) {
                                             {{ loan.customer.full_name }}
                                         </a>
                                     </th>
-                                    <td class="px-6 py-4">{{ loan.score }}</td>
                                     <td class="px-6 py-4">
                                         {{ currency(loan.amount) }}
                                     </td>
@@ -95,7 +91,7 @@ if (props.message) {
                                                 !loan.approved_at &&
                                                 !loan.reject_at
                                             "
-                                            >Pendiente</span
+                                            >{{ loan.stage_label }}</span
                                         >
                                         <span
                                             class="me-2 rounded bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-300"

@@ -17,10 +17,16 @@ class LoanProductController extends Controller
 
             return $product->only([
                 'type', 'name', 'annual_rate', 'opening_fee', 'iva', 'min_amount', 'max_amount', 'amount_step', 'min_term', 'max_term', 'active',
-            ]) + ['updated_at' => $product->updated_at];
+                'moratory_rate', 'grace_days', 'early_payoff_penalty', 'min_forced_months',
+            ]) + ['required_documents' => $product->requiredDocuments(), 'updated_at' => $product->updated_at];
         })->values();
 
-        return Inertia::render('Admin/LoanProducts', ['products' => $products]);
+        // Tipos que se pueden exigir: los que sube el cliente en su solicitud y los del catálogo del equipo
+        $documentTypes = collect(LoanProduct::DEFAULT_DOCUMENTS)
+            ->merge(\App\Models\DocumentType::orderBy('name')->pluck('name'))
+            ->unique()->values();
+
+        return Inertia::render('Admin/LoanProducts', ['products' => $products, 'documentTypes' => $documentTypes]);
     }
 
     public function update(Request $request, string $type)
@@ -38,6 +44,12 @@ class LoanProductController extends Controller
             'min_term' => 'required|integer|min:1|max:60',
             'max_term' => 'required|integer|gte:min_term|max:60',
             'active' => 'required|boolean',
+            'moratory_rate' => 'required|numeric|min:0|max:300',
+            'grace_days' => 'required|integer|min:0|max:60',
+            'early_payoff_penalty' => 'required|numeric|min:0|max:20',
+            'min_forced_months' => 'required|integer|min:0|max:60',
+            'required_documents' => 'present|array',
+            'required_documents.*' => 'string|max:255|distinct',
         ], [
             'annual_rate.min' => 'La tasa anual debe ser de al menos 1%.',
             'max_amount.gte' => 'El monto máximo no puede ser menor al mínimo.',

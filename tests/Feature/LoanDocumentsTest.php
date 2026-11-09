@@ -35,7 +35,7 @@ class LoanDocumentsTest extends TestCase
             'curp' => 'GOML900101MSLMRR01',
             'rfc' => 'GOML900101AB1',
         ]);
-        $loan = Loan::create(['customer_id' => $customer->id, 'type' => $type, 'amount' => $amount, 'term' => $term, 'purpose' => 'Negocio']);
+        $loan = $this->readyForApproval(Loan::create(['customer_id' => $customer->id, 'type' => $type, 'amount' => $amount, 'term' => $term, 'purpose' => 'Negocio']));
 
         $this->actingAs($this->userWithRole('Administrator'))->putJson("/loans/{$loan->id}", ['status' => 'accepted'])->assertOk();
 

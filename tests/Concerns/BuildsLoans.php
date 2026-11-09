@@ -35,6 +35,30 @@ trait BuildsLoans
         return $user;
     }
 
+    /** Deja una solicitud lista para aprobar: enviada, con expediente completo y validada (Buró y PLD) por un analista. */
+    protected function readyForApproval(Loan $loan, ?User $analyst = null): Loan
+    {
+        $analyst ??= $this->userWithRole('Analista de crédito');
+
+        foreach (\App\Models\LoanProduct::DEFAULT_DOCUMENTS as $type) {
+            $path = "loans/{$loan->id}/uploads/".md5($type).'.pdf';
+            \Illuminate\Support\Facades\Storage::disk(config('filesystems.documents'))->put($path, '%PDF-1.4');
+            $loan->documentations()->firstOrCreate(['type' => $type], ['name' => $type, 'path' => $path]);
+        }
+
+        $loan->forceFill([
+            'submitted_at' => $loan->submitted_at ?? now(),
+            'validation_started_at' => now(),
+            'validated_at' => now(),
+            'validated_by' => $analyst->id,
+            'bureau_folio' => 'BC-0001',
+            'bureau_result' => 'Sin atrasos',
+            'pld_result' => 'sin_coincidencias',
+        ])->save();
+
+        return $loan;
+    }
+
     /** Préstamo aprobado con plan de 3 cuotas de $1,160.00 y su cliente con cuenta de acceso. */
     protected function approvedLoan(?User $owner = null): array
     {

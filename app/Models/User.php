@@ -13,6 +13,20 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasRoles;
 
+    /** Roles del equipo: entran al panel interno y deben usar verificación en dos pasos. */
+    public const STAFF_ROLES = ['Administrator', 'Advisor', 'Analista de crédito', 'Gerente'];
+
+    /** Quién captura Buró y PLD y da por validada una solicitud. */
+    public const VALIDATOR_ROLES = ['Administrator', 'Analista de crédito'];
+
+    /** Quién aprueba, rechaza y registra el desembolso. */
+    public const APPROVER_ROLES = ['Administrator', 'Gerente'];
+
+    public function isStaff(): bool
+    {
+        return $this->hasAnyRole(self::STAFF_ROLES);
+    }
+
     /**
      * The attributes that are mass assignable.
      *

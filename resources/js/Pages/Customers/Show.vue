@@ -10,18 +10,12 @@ import {
     TableHeader,
     TableRow,
 } from "@/Components/ui/table";
-import { Progress } from "@/Components/ui/progress";
-import { computed } from 'vue';
 
 const props = defineProps({
     customer: Object,
     loans: Array,
 });
 
-// Calculate credit score percentage (assuming score is between 0-100)
-const creditScorePercentage = computed(() => {
-    return (props.customer?.score || 0) * 100;
-});
 
 // Format currency
 const formatCurrency = (amount) => {
@@ -79,27 +73,6 @@ const formatDate = (date) => {
                     </CardContent>
                 </Card>
 
-                <!-- Credit Score Card -->
-                <Card class="mt-5">
-                    <CardHeader class="flex flex-col p-4">
-                        <CardTitle class="text-2xl">Calificación Crediticia</CardTitle>
-                        <CardDescription>Evaluación del comportamiento crediticio</CardDescription>
-                    </CardHeader>
-                    <CardContent class="w-full p-4">
-                        <div class="space-y-4">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm font-medium">Score Crediticio</span>
-                                <span class="text-sm font-medium">{{ creditScorePercentage }}%</span>
-                            </div>
-                            <Progress :value="creditScorePercentage" class="h-2" />
-                            <div class="text-sm text-muted-foreground">
-                                {{ creditScorePercentage >= 70 ? 'Excelente pagador' : 
-                                   creditScorePercentage >= 50 ? 'Buen pagador' : 
-                                   creditScorePercentage >= 30 ? 'Pagador regular' : 'Pagador deficiente' }}
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
 
                 <!-- Loans Table Card -->
                 <Card class="mt-5">

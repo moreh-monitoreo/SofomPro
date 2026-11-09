@@ -30,7 +30,7 @@ class CustomerController extends Controller
         $loan = Loan::with('payment.details')->where('customer_id', $customer->id)->findOrFail($loan);
 
         // Un cliente solo puede ver sus propios préstamos
-        if (! auth()->user()->hasAnyRole(['Administrator', 'Advisor']) && $customer->user_id !== auth()->id()) {
+        if (! auth()->user()->isStaff() && $customer->user_id !== auth()->id()) {
             abort(403);
         }
 
@@ -38,7 +38,7 @@ class CustomerController extends Controller
             'customer' => $customer,
             'loan' => $loan,
             'summary' => $portfolio->summary($loan),
-            'isStaff' => auth()->user()->hasAnyRole(['Administrator', 'Advisor']),
+            'isStaff' => auth()->user()->isStaff(),
         ]);
     }
 }

@@ -69,6 +69,10 @@
         <tr><td>Capital</td><td class="right">${{ number_format($detail->principal_payment, 2) }}</td></tr>
         <tr><td>Interés ordinario</td><td class="right">${{ number_format($detail->interest_payment, 2) }}</td></tr>
         <tr><td>IVA sobre intereses</td><td class="right">${{ number_format($vat, 2) }}</td></tr>
+        @if ($detail->moratory_paid > 0)
+            <tr><td>Intereses moratorios</td><td class="right">${{ number_format($detail->moratory_paid, 2) }}</td></tr>
+            <tr><td>IVA sobre intereses moratorios</td><td class="right">${{ number_format($detail->moratory_iva_paid, 2) }}</td></tr>
+        @endif
         <tr class="total"><td>Total de la cuota</td><td class="right">${{ number_format($detail->monthly_payment, 2) }}</td></tr>
         @if ($detail->payment_total && round($detail->payment_total, 2) !== round($detail->monthly_payment, 2))
             <tr><td>Importe recibido</td><td class="right">${{ number_format($detail->payment_total, 2) }}</td></tr>

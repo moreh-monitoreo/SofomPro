@@ -2,16 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\CreateQuotationTableAction;
 use App\Actions\Loans\CreateCustomerAccountAction;
+use App\Actions\Loans\CreatePaymentPlanAction;
 use App\Actions\Loans\GenerateLoanDocumentsAction;
 use App\Services\MorehContractService;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Services\AuditLogger;
 use App\Services\LoanPortfolio;
-use App\Models\Payment;
-use App\Models\PaymentDetail;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use App\Actions\Global\Files\UploadFileAction;
+use InvalidArgumentException;
 
 class LoansController extends Controller
 {
@@ -30,10 +29,11 @@ class LoansController extends Controller
             ->through(fn (Loan $loan) => [
                 'id' => $loan->id,
                 'customer' => ['id' => $loan->customer->id, 'full_name' => $loan->customer->full_name],
-                'score' => $loan->score,
                 'amount' => $loan->amount,
                 'term' => $loan->term,
                 'purpose' => $loan->purpose,
+                'stage' => $loan->stage,
+                'stage_label' => $loan->stage_label,
                 'approved_at' => $loan->approved_at,
                 'reject_at' => $loan->reject_at,
                 'paid_at' => $loan->paid_at,
@@ -46,13 +46,29 @@ class LoansController extends Controller
         ]);
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $loan = Loan::with(['customer.addresses', 'customer.employment', 'documentations'])->findOrFail($id);
+        $loan = Loan::with(['customer.addresses', 'customer.employment', 'customer.references', 'documentations'])->findOrFail($id);
+        $user = $request->user();
+        $product = $loan->product();
 
         return Inertia::render('Loans/LoansAgentDetailView', [
             'loan' => $loan,
             'account' => $this->accountInfo($loan->customer),
+            'missingDocuments' => $loan->missingDocuments(),
+            'validator' => $loan->validated_by ? User::find($loan->validated_by)?->only('id', 'name') : null,
+            'disbursement' => [
+                'methods' => Loan::DISBURSEMENT_METHODS,
+                'opening_fee' => round((float) $loan->amount * $product->opening_fee / 100, 2),
+                'opening_fee_iva' => round((float) $loan->amount * $product->opening_fee / 100 * $product->iva / 100, 2),
+            ],
+            'pldResults' => Loan::PLD_RESULTS,
+            'can' => [
+                'validate' => $user->hasAnyRole(User::VALIDATOR_ROLES),
+                'approve' => $user->hasAnyRole(User::APPROVER_ROLES) && $loan->validated_by !== $user->id,
+                'reject' => $user->hasAnyRole([...User::VALIDATOR_ROLES, ...User::APPROVER_ROLES]),
+                'disburse' => $user->hasAnyRole(User::APPROVER_ROLES),
+            ],
         ]);
     }
 
@@ -86,7 +102,7 @@ class LoansController extends Controller
         return new JsonResponse(['message' => "Se envió la invitación a {$loan->customer->email}"]);
     }
 
-    public function update(Request $request, $id, CreateCustomerAccountAction $createAccount, GenerateLoanDocumentsAction $generateDocuments)
+    public function update(Request $request, $id, CreateCustomerAccountAction $createAccount, GenerateLoanDocumentsAction $generateDocuments, CreatePaymentPlanAction $createPlan)
     {
         $request->validate([
             'status' => 'required|in:accepted,rejected',
@@ -94,16 +110,37 @@ class LoansController extends Controller
         ]);
 
         $loan = Loan::with('customer')->findOrFail($id);
+        $user = $request->user();
 
         if ($loan->approved_at != null || $loan->reject_at != null) {
             return new JsonResponse(['message' => 'La solicitud ya fue procesada'], 400);
         }
 
         if ($request->status == 'rejected') {
+            if (! $user->hasAnyRole([...User::VALIDATOR_ROLES, ...User::APPROVER_ROLES])) {
+                return new JsonResponse(['message' => 'Tu rol no puede rechazar solicitudes.'], 403);
+            }
             $loan->update(['reject_at' => now(), 'reject_reason' => $request->reason]);
             AuditLogger::record('loan.rejected', $loan, $loan->id, note: $request->reason);
 
             return new JsonResponse(['loan' => $loan, 'message' => 'La solicitud fue rechazada']);
+        }
+
+        // Doble firma: el analista valida (Buró y PLD) y otra persona con rol de aprobación autoriza
+        if (! $user->hasAnyRole(User::APPROVER_ROLES)) {
+            return new JsonResponse(['message' => 'Solo un Gerente o un Administrador puede aprobar solicitudes.'], 403);
+        }
+        if (! $loan->validated_at) {
+            return new JsonResponse(['message' => 'La solicitud debe estar validada (Buró de Crédito y cotejo PLD) antes de aprobarse.'], 422);
+        }
+        if ((int) $loan->validated_by === (int) $user->id) {
+            return new JsonResponse(['message' => 'Quien validó la solicitud no puede aprobarla; debe hacerlo otra persona.'], 403);
+        }
+        if ($loan->pld_result !== 'sin_coincidencias') {
+            return new JsonResponse(['message' => 'El cotejo PLD tiene coincidencias en listas: la solicitud no se puede aprobar.'], 422);
+        }
+        if ($missing = $loan->missingDocuments()) {
+            return new JsonResponse(['message' => 'Faltan documentos obligatorios en el expediente: '.implode(', ', $missing).'.', 'missing' => $missing], 422);
         }
 
         // Condiciones aprobadas: por defecto las solicitadas; el equipo puede aprobar otro monto o plazo dentro de los límites del producto
@@ -122,33 +159,38 @@ class LoansController extends Controller
             return new JsonResponse(['message' => 'El cliente no tiene correo registrado para crear su cuenta'], 422);
         }
 
+        $before = ['amount' => (float) $loan->amount, 'term' => (int) $loan->term];
         $adjustments = [];
         if ($request->filled('amount') && round((float) $request->amount, 2) !== round((float) $loan->amount, 2)) {
-            $adjustments += ['requested_amount' => $loan->amount, 'amount' => $request->amount];
+            $adjustments['amount'] = $request->amount;
         }
         if ($request->filled('term') && (int) $request->term !== (int) $loan->term) {
-            $adjustments += ['requested_term' => $loan->term, 'term' => (int) $request->term];
+            $adjustments['term'] = (int) $request->term;
         }
 
         try {
-            DB::transaction(function () use ($loan, $createAccount, $generateDocuments, $adjustments, $request) {
+            DB::transaction(function () use ($loan, $createAccount, $generateDocuments, $createPlan, $adjustments, $user) {
                 $loan->update([
                     'approved_at' => now(),
                     'start_at' => Carbon::now()->addMonth()->firstOfMonth(),
-                    'approved_by' => $request->user()->id,
+                    'approved_by' => $user->id,
+                    // Lo que pidió el cliente se conserva aunque se apruebe otra cosa
+                    'requested_amount' => $loan->requested_amount ?? $loan->amount,
+                    'requested_term' => $loan->requested_term ?? $loan->term,
                 ] + $adjustments);
 
-                // 1. Cuenta del cliente, 2. Contratos y anexos según el tipo de préstamo
+                // 1. Cuenta del cliente, 2. Plan de pagos con las condiciones del producto, 3. Contratos y anexos
                 $createAccount->handle($loan->customer);
-                $generateDocuments->handle($loan);
+                $createPlan->handle($loan);
+                $generateDocuments->handle($loan->fresh(['customer', 'payment']));
             });
 
-            AuditLogger::record('loan.approved', $loan, $loan->id, after: ['amount' => (float) $loan->fresh()->amount, 'term' => (int) $loan->fresh()->term]);
+            $after = ['amount' => (float) $loan->fresh()->amount, 'term' => (int) $loan->fresh()->term];
+            AuditLogger::record('loan.approved', $loan, $loan->id, after: $after);
             if ($adjustments) {
-                AuditLogger::record('loan.conditions_changed', $loan, $loan->id,
-                    before: ['amount' => (float) ($adjustments['requested_amount'] ?? $loan->amount), 'term' => (int) ($adjustments['requested_term'] ?? $loan->term)],
-                    after: ['amount' => (float) $loan->fresh()->amount, 'term' => (int) $loan->fresh()->term]);
+                AuditLogger::record('loan.conditions_changed', $loan, $loan->id, before: $before, after: $after);
             }
+            AuditLogger::record('loan.plan_saved', $loan->fresh('payment')->payment, $loan->id, after: $after);
 
             // La invitación va fuera de la transacción: si el correo falla, la aprobación no se pierde
             try {
@@ -162,109 +204,76 @@ class LoansController extends Controller
             return new JsonResponse(['message' => 'No se pudo aprobar la solicitud: ' . $e->getMessage()], 500);
         }
 
-        return new JsonResponse(['loan' => $loan->fresh(), 'message' => 'La solicitud fue aprobada, se creó la cuenta del cliente y su documentación']);
+        return new JsonResponse(['loan' => $loan->fresh(), 'message' => 'La solicitud fue aprobada; se generó su plan de pagos, la cuenta del cliente y su documentación']);
+    }
+
+    public function planFunerario($id, MorehContractService $moreh)
+    {
+        $loan = Loan::findOrFail($id);
+
+        if ($loan->type !== 'FUNERARIO' || ! $loan->policy_folio) {
+            return new JsonResponse(['message' => 'Este préstamo no tiene un Plan Funerario como garantía'], 422);
+        }
+
+        $result = $moreh->findByFolio($loan->policy_folio);
+
+        return new JsonResponse($result['body'], $result['status']);
     }
 
     public function payments(Request $request, LoanPortfolio $portfolio, $id)
     {
         $loan = Loan::with('payment.details', 'customer')->findOrFail($id);
+        $user = $request->user();
 
         return Inertia::render('Payments/PaymentsView', [
             'loan' => $loan,
             'summary' => $portfolio->summary($loan),
-            'isAdmin' => $request->user()->hasRole('Administrator'),
+            'movements' => $loan->movements()->latest('id')->get(),
+            'kinds' => \App\Models\LoanPayment::KINDS,
+            'product' => $loan->product()->only(['annual_rate', 'opening_fee', 'iva', 'moratory_rate', 'grace_days', 'early_payoff_penalty', 'min_forced_months']),
+            'isAdmin' => $user->hasRole('Administrator'),
+            'canGeneratePlan' => $user->hasAnyRole(User::APPROVER_ROLES),
             'message' => session('message'),
         ]);
     }
 
-    public function createpayments(Request $request, $id, CreateQuotationTableAction $createQuotationTableAction, GenerateLoanDocumentsAction $generateDocuments)
+    /**
+     * Plan de pagos con las condiciones aprobadas y las del producto; ya no se capturan tasa, comisión ni plazo a mano.
+     * Sin willSave solo devuelve la tabla calculada; con willSave la guarda (y actualiza la documentación).
+     */
+    public function createpayments(Request $request, $id, CreatePaymentPlanAction $createPlan, GenerateLoanDocumentsAction $generateDocuments)
     {
         $loan = Loan::with('payment.details')->findOrFail($id);
 
-        $request->validate([
-            'amount' => 'required|numeric|min:1',
-            'months' => 'required_without:years|nullable|integer|min:1|max:360',
-            'years' => 'required_without:months|nullable|numeric|min:0.01',
-            'opening_fees' => 'required|numeric|min:0|max:100',
-            'annual_rate' => 'required|numeric|min:0|max:100',
-        ]);
+        if (! $request->user()->hasAnyRole(User::APPROVER_ROLES)) {
+            return new JsonResponse(['message' => 'Solo un Gerente o un Administrador puede generar el plan de pagos.'], 403);
+        }
+        if (! $loan->approved_at) {
+            return new JsonResponse(['message' => 'El préstamo debe estar aprobado para generar su plan de pagos.'], 422);
+        }
 
-        $startDate = new Carbon($request->start_date ?? null);
-        $years = $request->filled('months') ? $request->months / 12 : $request->years;
-
-        $paymentTable = $createQuotationTableAction->handle($request->amount, $years, $request->opening_fees, $request->annual_rate, LoanProduct::forType($loan->type)->iva / 100);
-
-        // "Generar plan" solo calcula; "Guardar plan" lo persiste
         if (! filter_var($request->willSave, FILTER_VALIDATE_BOOLEAN)) {
-            return new JsonResponse([
-                'result' => $paymentTable,
-                'message' => 'Se ha generado correctamente la tabla de pagos'
-            ]);
+            return new JsonResponse(['result' => $createPlan->preview($loan), 'message' => 'Se ha generado correctamente la tabla de pagos']);
         }
 
-        // Guardar de nuevo reemplaza el plan anterior, salvo que ya tenga pagos registrados
-        if ($loan->payment) {
-            if ($loan->payment->details->where('status', '!=', 'N')->isNotEmpty()) {
-                return new JsonResponse(['message' => 'El plan ya tiene pagos registrados y no se puede reemplazar'], 422);
-            }
-            $loan->payment->details()->delete();
-            $loan->payment->delete();
+        try {
+            $payment = $createPlan->handle($loan);
+        } catch (InvalidArgumentException $e) {
+            return new JsonResponse(['message' => $e->getMessage()], 422);
         }
 
-        $payment = Payment::create([
-            'loan_id' => $loan->id,
-            'request_amount' => $request->amount,
-            'payment_amount' => $paymentTable['to_pay_simple_interest'],
-            'cat_type' => 'irr',
-            'cat_amount' => $paymentTable['cat_con_iva'] / 100,
-            'cat_sin_iva' => $paymentTable['cat_sin_iva'] / 100,
-            'total_months' => $paymentTable['total_months'],
-            'month_rate' => $paymentTable['month_rate'],
-            'opening_fees' => $paymentTable['opening_fees'],
-            'status' => 'N',
-        ]);
+        AuditLogger::record('loan.plan_saved', $payment, $loan->id, after: ['amount' => (float) $loan->amount, 'months' => $payment->details->count()]);
 
-        foreach ($paymentTable['payments'] as $index => $pay) {
-            $newDate = $startDate->copy()->addMonthsNoOverflow($index + 1);
-
-            $payment->details->push(PaymentDetail::create([
-                'payment_id' => $payment->id,
-                'number' => $index + 1,
-                'month' => $newDate->format('m'),
-                'year' => $newDate->year,
-                'due_date' => $newDate->toDateString(),
-                'interest_payment' => $pay['interest_payment'],
-                'principal_payment' => $pay['principal_payment'],
-                'balance' => $pay['balance'],
-                'monthly_payment' => $pay['monthly_payment'],
-                'status' => 'N',
-            ]));
-        }
-
-        AuditLogger::record('loan.plan_saved', $payment, $loan->id, after: [
-            'amount' => (float) $request->amount,
-            'months' => count($paymentTable['payments']),
-            'annual_rate' => (float) $request->annual_rate,
-            'opening_fees' => (float) $request->opening_fees,
-        ]);
-
-        // Si el préstamo ya está aprobado, la documentación (carátula y tabla de amortización) se actualiza con este plan
         $message = 'Se ha guardado correctamente la tabla de pagos';
-        if ($loan->approved_at) {
-            try {
-                $generateDocuments->handle($loan->fresh(['customer', 'payment']));
-                $message .= ' y se actualizó la documentación del préstamo';
-            } catch (\Throwable $e) {
-                report($e);
-                $message .= ', pero no se pudo actualizar la documentación';
-            }
+        try {
+            $generateDocuments->handle($loan->fresh(['customer', 'payment']));
+            $message .= ' y se actualizó la documentación del préstamo';
+        } catch (\Throwable $e) {
+            report($e);
+            $message .= ', pero no se pudo actualizar la documentación';
         }
 
-        return new JsonResponse([
-            'result' => $paymentTable,
-            'message' => $message,
-            'payment' => $payment,
-        ]);
+        return new JsonResponse(['result' => $createPlan->preview($loan), 'message' => $message, 'payment' => $payment]);
     }
 
     public function history()
@@ -324,6 +333,7 @@ class LoansController extends Controller
         return new JsonResponse([
             'message' => 'Se han actualizado los documentos correctamente',
             'documents' => $uploadedDocuments,
+            'missingDocuments' => $loan->missingDocuments(),
         ]);
     }
 
@@ -341,7 +351,7 @@ class LoansController extends Controller
         $document->delete();
         AuditLogger::record('document.deleted', $document, $loan->id, note: $document->name);
 
-        return new JsonResponse(['message' => 'Documento eliminado correctamente']);
+        return new JsonResponse(['message' => 'Documento eliminado correctamente', 'missingDocuments' => $loan->missingDocuments()]);
     }
 
     /** Abre un documento del préstamo; en Firebase el bucket es privado, así que se firma un enlace temporal. */

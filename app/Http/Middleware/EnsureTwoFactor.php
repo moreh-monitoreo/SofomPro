@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Las cuentas del equipo (Administrator y Advisor) deben activar la verificación en dos pasos
+ * Las cuentas del equipo (ver User::STAFF_ROLES) deben activar la verificación en dos pasos
  * y confirmarla en cada sesión antes de usar el panel. Los clientes no se ven afectados.
  */
 class EnsureTwoFactor

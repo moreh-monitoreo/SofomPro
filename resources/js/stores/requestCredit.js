@@ -67,9 +67,17 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         paid_at: '',
     });
 
+    const referencesInfo = ref({
+        clabe: '',
+        references: [
+            { name: '', relationship: '', phone: '' },
+            { name: '', relationship: '', phone: '' },
+        ],
+    });
+
     // Estado de la navegación
     const currentStep = ref(1);
-    const totalSteps = 7;
+    const totalSteps = 8;
     const isSubmitting = ref(false);
     const errors = ref({});
     const customerId = ref(null);
@@ -99,6 +107,16 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
 
     const updateLoanInfo = (data) => {
         loanInfo.value = { ...loanInfo.value, ...data };
+    };
+
+    const updateReferencesInfo = (data) => {
+        referencesInfo.value = { ...referencesInfo.value, ...data };
+    };
+
+    // Monto, plazo y producto elegidos en el simulador: precargan el paso del préstamo
+    const applySimulation = (simulation) => {
+        if (!simulation) return;
+        loanInfo.value = { ...loanInfo.value, type: simulation.type, amount: simulation.amount, term: simulation.term };
     };
 
     const setErrors = (newErrors) => {
@@ -200,6 +218,14 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
             (data) => {
                 customer.value = { ...customer.value, ...data };
             },
+        );
+
+    const sendReferences = () =>
+        submitStep(
+            `/request-credit/customer/${customerId.value}/references`,
+            { ...referencesInfo.value, clabe: String(referencesInfo.value.clabe).replace(/\s+/g, '') },
+            201,
+            () => {},
         );
 
     const sendDocuments = (files) => {
@@ -315,6 +341,7 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         employmentInfo,
         civilInfo,
         loanInfo,
+        referencesInfo,
         currentStep,
         totalSteps,
         isSubmitting,
@@ -330,6 +357,8 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         updateEmploymentInfo,
         updateCivilInfo,
         updateLoanInfo,
+        updateReferencesInfo,
+        applySimulation,
         setErrors,
         clearErrors,
         nextStep,
@@ -340,6 +369,7 @@ export const useRequestCreditStore = defineStore('requestCredit', () => {
         sendCivilInfo,
         sendEmploymentInfo,
         sendLoanInfo,
+        sendReferences,
         sendDocuments,
     };
 }); 

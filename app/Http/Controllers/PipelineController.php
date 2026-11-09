@@ -98,7 +98,6 @@ class PipelineController extends Controller
             'amount' => $loan->amount,
             'term' => $loan->term,
             'type' => $loan->type,
-            'score' => $loan->score,
             'stage' => $loan->stage,
             'stage_label' => $loan->stage_label,
             'created_at' => $loan->created_at?->toDateString(),

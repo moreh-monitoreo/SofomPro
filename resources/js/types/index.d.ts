@@ -25,7 +25,6 @@ export interface Loan {
     term: number;
     purpose: string;
     purpose_description: string;
-    score: string;
     approved_at: string;
     reject_at: string | null;
     start_at: string;

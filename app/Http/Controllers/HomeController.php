@@ -13,7 +13,7 @@ class HomeController extends Controller
     {
         $user = auth()->user();
 
-        $isStaff = $user->hasAnyRole(['Administrator', 'Advisor']);
+        $isStaff = $user->isStaff();
 
         // El personal ve solo el resumen del equipo; "Mis préstamos" es del portal del cliente
         $loans = $isStaff ? collect() : Loan::with('payment.details')
@@ -54,6 +54,8 @@ class HomeController extends Controller
         return [
             'received' => Loan::stage('received')->count(),
             'in_validation' => Loan::stage('in_validation')->count(),
+            'validated' => Loan::stage('validated')->count(),
+            'incomplete' => Loan::stage('incomplete')->count(),
             'approved' => Loan::stage('approved')->count(),
             'overdue_clients' => $overdue->count(),
             'overdue_amount' => round($overdue->sum('overdue_amount'), 2),

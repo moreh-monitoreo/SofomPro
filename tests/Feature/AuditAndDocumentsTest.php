@@ -39,7 +39,7 @@ class AuditAndDocumentsTest extends TestCase
             'rfc' => 'GOML900101AB1',
         ]);
 
-        return Loan::create(['customer_id' => $customer->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio']);
+        return $this->readyForApproval(Loan::create(['customer_id' => $customer->id, 'type' => 'NORMAL', 'amount' => 3000, 'term' => 6, 'purpose' => 'Negocio']));
     }
 
     private function upload(Loan $loan, $user)
@@ -58,7 +58,7 @@ class AuditAndDocumentsTest extends TestCase
         $loan = $this->pendingLoan();
         $admin = $this->userWithRole('Administrator');
         $this->upload($loan, $admin)->assertOk();
-        $document = $loan->documentations()->first();
+        $document = $loan->documentations()->where('name', 'INE')->first();
 
         $this->actingAs($admin)->deleteJson("/loans/{$loan->id}/documents/{$document->id}")->assertOk();
 
@@ -70,7 +70,7 @@ class AuditAndDocumentsTest extends TestCase
         $loan = $this->pendingLoan();
         $admin = $this->userWithRole('Administrator');
         $this->upload($loan, $admin)->assertOk();
-        $document = $loan->documentations()->first();
+        $document = $loan->documentations()->where('name', 'INE')->first();
 
         $this->actingAs($admin)->putJson("/loans/{$loan->id}", ['status' => 'accepted'])->assertOk();
 
@@ -91,7 +91,7 @@ class AuditAndDocumentsTest extends TestCase
 
         $this->upload($loan, $advisor)->assertOk();
 
-        $this->assertSame($advisor->id, $loan->documentations()->first()->uploaded_by);
+        $this->assertSame($advisor->id, $loan->documentations()->where('name', 'INE')->first()->uploaded_by);
     }
 
     // ---- Bitácora ------------------------------------------------------------------------------

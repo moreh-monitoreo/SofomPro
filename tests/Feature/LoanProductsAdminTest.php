@@ -24,6 +24,11 @@ class LoanProductsAdminTest extends TestCase
             'min_term' => 3,
             'max_term' => 24,
             'active' => true,
+            'moratory_rate' => 42,
+            'grace_days' => 0,
+            'early_payoff_penalty' => 3,
+            'min_forced_months' => 0,
+            'required_documents' => ['INE (frente)', 'INE (reverso)'],
         ], $override);
     }
 

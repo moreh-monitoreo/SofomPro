@@ -25,13 +25,13 @@ const data = {
             name: 'Inicio',
             url: '/dashboard',
             icon: House,
-            roles: ['Administrator', 'Advisor', 'Customer'],
+            roles: ['Administrator', 'Advisor', 'Analista de crédito', 'Gerente', 'Customer'],
         },
         {
             name: 'Perfil',
             url: '/profile',
             icon: HandCoins,
-            roles: ['Administrator', 'Advisor', 'Customer'],
+            roles: ['Administrator', 'Advisor', 'Analista de crédito', 'Gerente', 'Customer'],
         },
     ],
 };

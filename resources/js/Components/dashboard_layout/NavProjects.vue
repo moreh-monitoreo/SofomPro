@@ -57,7 +57,7 @@ const page = usePage();
             </SidebarMenuItem>
         </SidebarMenu>
 
-        <template v-if="hasAccess(['Administrator', 'Advisor'], page.props.auth.roles)">
+        <template v-if="hasAccess(['Administrator', 'Advisor', 'Analista de crédito', 'Gerente'], page.props.auth.roles)">
             <SidebarGroupLabel>Agente</SidebarGroupLabel>
             <SidebarMenu>
                 <SidebarMenuItem>

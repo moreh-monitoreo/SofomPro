@@ -16,7 +16,13 @@ const loanStore = useAgentLoanStore();
 const props = defineProps({
     loan: Object,
     account: { type: Object, default: null },
+    missingDocuments: { type: Array, default: () => [] },
+    validator: { type: Object, default: null },
+    disbursement: { type: Object, default: () => ({ methods: {}, opening_fee: 0, opening_fee_iva: 0 }) },
+    pldResults: { type: Object, default: () => ({}) },
+    can: { type: Object, default: () => ({}) },
 });
+const missing = ref(props.missingDocuments);
 const step = ref(0);
 const loan = ref(props.loan);
 const documents = ref([]);
@@ -74,8 +80,10 @@ const changeStep = (newstep) => (step.value = newstep);
 
 // ---- Etapa de la solicitud --------------------------------------------------------------
 const stageStyle = {
+    incomplete: 'bg-orange-50 text-orange-800',
     received: 'bg-gray-100 text-gray-800',
     in_validation: 'bg-blue-100 text-blue-800',
+    validated: 'bg-indigo-100 text-indigo-800',
     approved: 'bg-green-100 text-green-800',
     disbursed: 'bg-teal-100 text-teal-800',
     paid: 'bg-emerald-100 text-emerald-900',
@@ -92,24 +100,83 @@ async function startValidation() {
     }
 }
 
+const netAmount = computed(() => Number(loan.value.amount || 0) - props.disbursement.opening_fee - props.disbursement.opening_fee_iva);
+
 async function disburse() {
+    const options = Object.entries(props.disbursement.methods)
+        .map(([value, label]) => `<option value="${value}">${label}</option>`)
+        .join('');
     const result = await Swal.fire({
-        title: '¿Registrar el desembolso?',
-        text: 'Confirma que ya entregaste el dinero al cliente.',
-        icon: 'question',
+        title: 'Registrar el desembolso',
+        html: `
+            <p style="font-size:14px;margin-bottom:12px">Monto neto a entregar: <strong>${money(netAmount.value)}</strong>
+            (${money(loan.value.amount)} menos comisión por apertura ${money(props.disbursement.opening_fee)} e IVA ${money(props.disbursement.opening_fee_iva)})</p>
+            <label style="display:block;text-align:left;font-size:14px">Forma de pago</label>
+            <select id="disb-method" class="swal2-select" style="width:100%;margin:4px 0 12px">${options}</select>
+            <label style="display:block;text-align:left;font-size:14px">Referencia (clave de rastreo, núm. de cheque o recibo)</label>
+            <input id="disb-reference" class="swal2-input" maxlength="120" style="width:100%;margin:4px 0 12px">
+            <label style="display:block;text-align:left;font-size:14px">Fecha del desembolso</label>
+            <input id="disb-date" type="date" class="swal2-input" style="width:100%;margin:4px 0" value="${new Date().toISOString().slice(0, 10)}">`,
         showCancelButton: true,
         confirmButtonColor: '#2ECC71',
         cancelButtonText: 'Cancelar',
-        confirmButtonText: 'Sí, ya se entregó',
+        confirmButtonText: 'Registrar',
+        preConfirm: () => {
+            const reference = document.getElementById('disb-reference').value.trim();
+            if (!reference) {
+                Swal.showValidationMessage('Captura la referencia del desembolso.');
+                return false;
+            }
+            return {
+                method: document.getElementById('disb-method').value,
+                reference,
+                disbursed_at: document.getElementById('disb-date').value || null,
+            };
+        },
     });
     if (!result.isConfirmed) return;
 
     try {
-        const { data } = await axios.post(route('loans.disburse', loan.value.id));
+        const { data } = await axios.post(route('loans.disburse', loan.value.id), result.value);
         loan.value = { ...loan.value, ...data.data };
         toast.success(data.message);
     } catch (error) {
         toast.error(error.response?.data?.message || 'No se pudo registrar el desembolso.');
+    }
+}
+
+// ---- Validación: Buró de Crédito y cotejo PLD (analista) ---------------------------------
+const validation = ref({
+    bureau_folio: loan.value.bureau_folio || '',
+    bureau_result: loan.value.bureau_result || '',
+    pld_result: loan.value.pld_result || 'sin_coincidencias',
+    pld_evidence: null,
+});
+const validationErrors = ref({});
+const validating = ref(false);
+const canEditValidation = computed(() => props.can.validate && ['received', 'in_validation', 'validated'].includes(loan.value.stage));
+const pldEvidence = computed(() => (loan.value.documentations || []).filter((d) => d.type === 'Cotejo PLD').at(-1));
+
+async function submitValidation() {
+    validating.value = true;
+    validationErrors.value = {};
+    try {
+        const form = new FormData();
+        Object.entries(validation.value).forEach(([key, value]) => value !== null && form.append(key, value));
+        const { data } = await axios.post(route('loans.validate', loan.value.id), form);
+        loan.value = { ...loan.value, ...data.data.loan };
+        missing.value = data.data.missingDocuments;
+        validation.value.pld_evidence = null;
+        toast.success(data.message);
+    } catch (error) {
+        const errors = error.response?.data?.errors;
+        if (errors) {
+            validationErrors.value = Object.fromEntries(Object.entries(errors).map(([k, v]) => [k, v[0]]));
+        } else {
+            toast.error(error.response?.data?.message || 'No se pudo guardar la validación.');
+        }
+    } finally {
+        validating.value = false;
     }
 }
 
@@ -248,6 +315,7 @@ async function deleteDocument(documentation) {
     try {
         const response = await axios.delete(route('loans.documents.destroy', [loan.value.id, documentation.id]));
         loan.value.documentations = loan.value.documentations.filter((doc) => doc.id !== documentation.id);
+        missing.value = response.data.missingDocuments ?? missing.value;
         toast.success(response.data.message);
     } catch (error) {
         toast.error(error.response?.data?.message || 'No se pudo eliminar el documento.');
@@ -276,6 +344,7 @@ async function updateDocuments() {
         const response = await axios.post(`/loans/${loan.value.id}/documents`, formData);
         toast.success(response.data.message);
         loan.value.documentations.push(...response.data.documents);
+        missing.value = response.data.missingDocuments ?? missing.value;
         documents.value.splice(0); // mismo arreglo que usa DocumentUpload, para que también se limpie
         changeStep(4);
     } catch (error) {
@@ -305,11 +374,18 @@ async function updateDocuments() {
                         <div class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4">
                             <div class="flex flex-wrap items-center gap-3">
                                 <span :class="['rounded px-3 py-1 text-sm font-semibold', stageStyle[loan.stage]]">{{ loan.stage_label }}</span>
-                                <span v-if="loan.requested_amount || loan.requested_term" class="text-sm text-gray-600">
+                                <span
+                                    v-if="loan.requested_amount && (Number(loan.requested_amount) !== Number(loan.amount) || Number(loan.requested_term) !== Number(loan.term))"
+                                    class="text-sm text-gray-600"
+                                >
                                     El cliente pidió {{ money(loan.requested_amount ?? loan.amount) }} a {{ loan.requested_term ?? loan.term }} meses ·
                                     se aprobó {{ money(loan.amount) }} a {{ loan.term }} meses
                                 </span>
                                 <span v-if="loan.reject_reason" class="text-sm text-red-700">Motivo del rechazo: {{ loan.reject_reason }}</span>
+                                <span v-if="loan.disbursement_method" class="text-sm text-gray-600">
+                                    Desembolso: {{ disbursement.methods[loan.disbursement_method] ?? loan.disbursement_method }} · ref. {{ loan.disbursement_reference }}
+                                </span>
+                                <span v-if="loan.stage === 'incomplete'" class="text-sm text-orange-700">El cliente aún no termina su solicitud (faltan sus documentos).</span>
                             </div>
                             <div class="flex flex-wrap gap-2">
                                 <button
@@ -321,7 +397,7 @@ async function updateDocuments() {
                                     Iniciar validación
                                 </button>
                                 <button
-                                    v-if="loan.stage === 'approved'"
+                                    v-if="loan.stage === 'approved' && can.disburse"
                                     type="button"
                                     class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
                                     @click="disburse"
@@ -423,6 +499,22 @@ async function updateDocuments() {
                                                 :value="loan?.customer?.curp" />
                                         </div>
                                     </div>
+                                    <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                        <h6 class="mb-2 text-sm font-semibold text-gray-900">Cuenta para depósito y referencias</h6>
+                                        <p class="text-sm">
+                                            <span class="text-gray-500">CLABE:</span>
+                                            <span class="ml-1 font-mono font-medium">{{ loan?.customer?.clabe || 'No capturada' }}</span>
+                                        </p>
+                                        <ul v-if="loan?.customer?.references?.length" class="mt-2 space-y-1 text-sm">
+                                            <li v-for="reference in loan.customer.references" :key="reference.id">
+                                                <span class="font-medium">{{ reference.name }}</span>
+                                                <span class="text-gray-500"> · {{ reference.relationship }} · </span>
+                                                <a :href="`tel:${reference.phone}`" class="text-blue-600 hover:underline">{{ reference.phone }}</a>
+                                            </li>
+                                        </ul>
+                                        <p v-else class="mt-2 text-sm text-gray-600">Sin referencias personales capturadas.</p>
+                                    </div>
+
                                     <div v-if="loan?.approved_at" class="rounded-lg border border-green-200 bg-green-50 p-3">
                                         <p class="mb-2 text-sm font-semibold text-gray-900">Cuenta del cliente</p>
                                         <div class="flex flex-wrap items-end gap-4">
@@ -669,6 +761,9 @@ async function updateDocuments() {
                                     <h5 class="text-xl font-medium text-gray-900 dark:text-white">
                                         Documentación
                                     </h5>
+                                    <p v-if="missing.length" role="alert" class="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
+                                        Faltan documentos obligatorios para aprobar: <strong>{{ missing.join(', ') }}</strong>.
+                                    </p>
                                     <div v-if="loan.documentations.length == 0">
                                         No hay documentos guardados
                                     </div>
@@ -772,6 +867,53 @@ async function updateDocuments() {
                                         </div>
                                     </div>
 
+                                    <div class="rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
+                                        <h6 class="text-base font-semibold text-gray-900">Validación: Buró de Crédito y PLD</h6>
+                                        <dl v-if="loan.validated_at" class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm md:grid-cols-2">
+                                            <div><dt class="inline text-gray-500">Folio de Buró:</dt> <dd class="inline font-medium">{{ loan.bureau_folio }}</dd></div>
+                                            <div><dt class="inline text-gray-500">Resultado:</dt> <dd class="inline font-medium">{{ loan.bureau_result }}</dd></div>
+                                            <div>
+                                                <dt class="inline text-gray-500">Cotejo PLD:</dt>
+                                                <dd :class="['inline font-medium', loan.pld_result === 'sin_coincidencias' ? 'text-green-700' : 'text-red-700']">{{ pldResults[loan.pld_result] }}</dd>
+                                                <a v-if="pldEvidence" :href="route('loans.documents.show', [loan.id, pldEvidence.id])" target="_blank" class="ml-2 text-blue-600 underline">comprobante</a>
+                                            </div>
+                                            <div><dt class="inline text-gray-500">Validó:</dt> <dd class="inline font-medium">{{ validator?.name ?? '—' }} · {{ new Date(loan.validated_at).toLocaleString('es-MX') }}</dd></div>
+                                        </dl>
+                                        <p v-else class="mt-1 text-sm text-gray-600">
+                                            Un analista de crédito debe capturar el folio y resultado de Buró y el cotejo contra listas (con comprobante) antes de que se pueda aprobar.
+                                        </p>
+
+                                        <form v-if="canEditValidation" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2" @submit.prevent="submitValidation">
+                                            <div>
+                                                <label for="bureau-folio" class="mb-1 block text-sm font-medium text-gray-900">Folio de la consulta a Buró</label>
+                                                <input id="bureau-folio" v-model="validation.bureau_folio" type="text" maxlength="60" class="block w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
+                                                <p v-if="validationErrors.bureau_folio" class="mt-1 text-sm text-red-600">{{ validationErrors.bureau_folio }}</p>
+                                            </div>
+                                            <div>
+                                                <label for="bureau-result" class="mb-1 block text-sm font-medium text-gray-900">Resultado de Buró</label>
+                                                <input id="bureau-result" v-model="validation.bureau_result" type="text" maxlength="255" placeholder="Ej. score 680, sin atrasos" class="block w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
+                                                <p v-if="validationErrors.bureau_result" class="mt-1 text-sm text-red-600">{{ validationErrors.bureau_result }}</p>
+                                            </div>
+                                            <div>
+                                                <label for="pld-result" class="mb-1 block text-sm font-medium text-gray-900">Cotejo contra listas (PLD)</label>
+                                                <select id="pld-result" v-model="validation.pld_result" class="block w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900">
+                                                    <option v-for="(label, value) in pldResults" :key="value" :value="value">{{ label }}</option>
+                                                </select>
+                                                <p v-if="validationErrors.pld_result" class="mt-1 text-sm text-red-600">{{ validationErrors.pld_result }}</p>
+                                            </div>
+                                            <div>
+                                                <label for="pld-evidence" class="mb-1 block text-sm font-medium text-gray-900">Comprobante del cotejo (PDF o imagen)</label>
+                                                <input id="pld-evidence" type="file" accept=".pdf,.jpg,.jpeg,.png" class="block w-full text-sm" @change="validation.pld_evidence = $event.target.files[0] ?? null" />
+                                                <p v-if="validationErrors.pld_evidence" class="mt-1 text-sm text-red-600">{{ validationErrors.pld_evidence }}</p>
+                                            </div>
+                                            <div class="md:col-span-2 flex justify-end">
+                                                <button type="submit" :disabled="validating" class="rounded-lg bg-indigo-700 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-800 disabled:opacity-60">
+                                                    {{ loan.validated_at ? 'Actualizar validación' : 'Marcar como validada' }}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+
                                     <div v-if="!processed" class="rounded-lg border border-gray-200 bg-gray-50 p-4">
                                         <h6 class="text-base font-semibold text-gray-900">Condiciones a aprobar</h6>
                                         <p class="text-sm text-gray-600">Puedes aprobar un monto o un plazo distinto al solicitado; la calculadora muestra el efecto antes de decidir.</p>
@@ -829,16 +971,25 @@ async function updateDocuments() {
                                         </div>
                                     </div>
 
-                                    <div v-if="!loan.approved_at && !loan.reject_at" class="flex justify-between">
+                                    <p v-if="!processed && can.approve && !loan.validated_at" class="text-sm text-gray-600">
+                                        Para aprobar, primero la debe validar un analista de crédito.
+                                    </p>
+                                    <p v-else-if="!processed && loan.validated_at && !can.approve && validator?.id === $page.props.auth.user.id" class="text-sm text-gray-600">
+                                        Tú validaste esta solicitud: la debe aprobar otra persona (Gerente o Administrador).
+                                    </p>
+                                    <p v-if="!processed && loan.validated_at && missing.length" class="text-sm text-yellow-800">
+                                        Faltan documentos obligatorios: {{ missing.join(', ') }}.
+                                    </p>
+                                    <div v-if="!loan.approved_at && !loan.reject_at && (can.reject || can.approve)" class="flex justify-between">
                                         <button type="button"
                                             class="rounded-lg bg-yellow-500 px-5 py-2.5 text-center text-sm font-medium text-white hover:bg-yellow-600 focus:outline-none focus:ring-4 focus:ring-yellow-300 disabled:bg-orange-300 disabled:opacity-75 dark:bg-yellow-300 dark:hover:bg-yellow-400 dark:focus:ring-yellow-800"
-                                            @click="rejectLoan" :disabled="loan.approved_at || loan.reject_at
+                                            @click="rejectLoan" :disabled="loan.approved_at || loan.reject_at || !can.reject
                                                 ">
                                             Rechazar
                                         </button>
                                         <button type="button"
                                             class="dark:bg-green-6400 rounded-lg bg-green-500 px-5 py-2.5 text-center text-sm font-medium text-white hover:bg-green-600 focus:outline-none focus:ring-4 focus:ring-green-300 disabled:bg-green-300 disabled:opacity-75 dark:hover:bg-green-500 dark:focus:ring-green-800"
-                                            @click="validateLoan" :disabled="loan.approved_at || loan.reject_at
+                                            @click="validateLoan" :disabled="loan.approved_at || loan.reject_at || !can.approve || !loan.validated_at || loan.pld_result !== 'sin_coincidencias' || missing.length > 0
                                                 ">
                                             Aceptar
                                         </button>

@@ -50,7 +50,6 @@ watch(search, searchLoans);
                                     <TableHead class="w-[200px]">
                                         Cliente
                                     </TableHead>
-                                    <TableHead>Puntuación</TableHead>
                                     <TableHead>Monto</TableHead>
                                     <TableHead class="text-right">
                                         Meses
@@ -67,7 +66,6 @@ watch(search, searchLoans);
                                             {{ loan.customer.full_name }}
                                         </a>
                                     </TableCell>
-                                    <TableCell>{{ loan.score }}</TableCell>
                                     <TableCell>$ {{ currency(loan.amount) }}</TableCell>
                                     <TableCell class="text-right">
                                     {{ loan.term }}

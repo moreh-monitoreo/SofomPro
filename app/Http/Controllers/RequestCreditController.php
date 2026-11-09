@@ -9,8 +9,10 @@ use App\Models\Customer;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\Status;
+use App\Rules\Clabe;
 use App\Rules\Curp;
 use App\Rules\Rfc;
+use App\Services\AuditLogger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -270,6 +272,9 @@ class RequestCreditController extends Controller
             'purpose' => $request->purpose,
             'purpose_description' => $request->purpose_description,
             'term' => $request->term,
+            // Lo que pide el cliente (viene del simulador o del formulario); el aprobador puede ajustarlo después
+            'requested_amount' => $request->amount,
+            'requested_term' => $request->term,
         ]);
 
         $customer->status_id = $status->id;
@@ -279,6 +284,41 @@ class RequestCreditController extends Controller
         $incrementScore->handle($loan->id, 'purpose', $request->purpose);
 
         return JsonResponse::success($loan, $status->name, 201);
+    }
+
+    /** Referencias personales y cuenta CLABE donde se deposita el crédito. */
+    public function references(Request $request, Customer $customer)
+    {
+        $request->merge(['clabe' => preg_replace('/\s+/', '', (string) $request->clabe)]);
+
+        $request->validate([
+            'clabe' => ['required', new Clabe],
+            'references' => 'required|array|min:2|max:3',
+            'references.*.name' => 'required|string|max:255',
+            'references.*.relationship' => 'required|string|max:60',
+            'references.*.phone' => ['required', 'regex:/^[0-9]{10}$/'],
+        ], [
+            'clabe.required' => 'Captura la cuenta CLABE donde quieres recibir el dinero.',
+            'references.required' => 'Agrega al menos dos referencias personales.',
+            'references.min' => 'Agrega al menos dos referencias personales.',
+            'references.*.name.required' => 'Escribe el nombre de la referencia #:position.',
+            'references.*.relationship.required' => 'Indica la relación con la referencia #:position.',
+            'references.*.phone.required' => 'Escribe el teléfono de la referencia #:position.',
+            'references.*.phone.regex' => 'El teléfono de la referencia #:position debe tener 10 dígitos.',
+        ]);
+
+        $phones = collect($request->references)->pluck('phone');
+        if ($phones->contains($customer->phone) || $phones->unique()->count() !== $phones->count()) {
+            return JsonResponse::error('Cada referencia debe tener un teléfono distinto al tuyo y al de las demás referencias.', 422);
+        }
+
+        $customer->update(['clabe' => $request->clabe]);
+        $customer->references()->delete();
+        foreach ($request->references as $reference) {
+            $customer->references()->create(collect($reference)->only(['name', 'relationship', 'phone'])->all());
+        }
+
+        return JsonResponse::success($customer->load('references'), 'REFERENCES REGISTERED', 201);
     }
 
     /** Documentos del solicitante (INE por ambos lados, comprobante de domicilio y estado de cuenta). */
@@ -299,6 +339,9 @@ class RequestCreditController extends Controller
         if (! $loan || ! $loan->amount) {
             return JsonResponse::error('Primero captura los datos del préstamo.', 422);
         }
+        if (! $customer->clabe || $customer->references()->count() < 2) {
+            return JsonResponse::error('Primero captura tus referencias personales y tu cuenta CLABE.', 422);
+        }
 
         $disk = Storage::disk(config('filesystems.documents'));
         $saved = [];
@@ -312,6 +355,12 @@ class RequestCreditController extends Controller
 
             $path = $disk->putFileAs("loans/{$loan->id}/uploads", $file, "{$field}.{$file->extension()}");
             $saved[] = $loan->documentations()->updateOrCreate(['type' => $label], ['name' => $label, 'path' => $path]);
+        }
+
+        // Con los documentos la solicitud queda completa y pasa de "Incompleta" a "Recibida"
+        if (! $loan->submitted_at) {
+            $loan->forceFill(['submitted_at' => now()])->save();
+            AuditLogger::record('loan.submitted', $loan, $loan->id);
         }
 
         return JsonResponse::success(['documents' => $saved], 'DOCUMENTS UPLOADED', 201);

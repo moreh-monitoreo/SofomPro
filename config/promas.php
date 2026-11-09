@@ -29,7 +29,7 @@ return [
     // Días de gracia después del vencimiento antes de considerar una cuota en mora
     'overdue_grace_days' => (int) env('OVERDUE_GRACE_DAYS', 0),
 
-    // Verificación en dos pasos obligatoria para las cuentas del equipo (Administrator y Advisor)
+    // Verificación en dos pasos obligatoria para las cuentas del equipo (ver User::STAFF_ROLES)
     'two_factor_required' => (bool) env('TWO_FACTOR_REQUIRED', true),
 
     'recaptcha' => [

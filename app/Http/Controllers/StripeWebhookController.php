@@ -54,7 +54,8 @@ class StripeWebhookController extends Controller
             return;
         }
 
-        $expected = (int) round($detail->monthly_payment * 100);
+        // El importe lo fija el servidor al crear la sesión (cuota pendiente con moratorios a esa fecha)
+        $expected = (int) ($session->metadata->expected_cents ?? round($detail->monthly_payment * 100));
         if ((int) $session->amount_total !== $expected || strtolower((string) $session->currency) !== 'mxn') {
             $this->log($eventId, 'error', [
                 'reason' => 'el monto o la moneda no coinciden',
