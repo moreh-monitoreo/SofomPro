@@ -9,9 +9,14 @@ use RuntimeException;
 
 class ImportSepomex extends Command
 {
-    protected $signature = 'sepomex:import {file : Archivo CPdescarga.txt de Correos de México (formato TXT)}';
+    protected $signature = 'sepomex:import {file : CPdescarga.txt de Correos de México, o el CSV del espejo gomflo/codigos-postales-mexico}';
 
     protected $description = 'Carga el catálogo nacional de códigos postales de SEPOMEX; reemplaza el que haya';
+
+    /** Columna del archivo que alimenta cada campo, según el formato. */
+    private const TXT_COLUMNS = ['code' => 'd_codigo', 'settlement' => 'd_asenta', 'settlement_type' => 'd_tipo_asenta', 'municipality' => 'D_mnpio', 'state' => 'd_estado', 'city' => 'd_ciudad'];
+
+    private const CSV_COLUMNS = ['code' => 'codigo_postal', 'settlement' => 'asentamiento', 'settlement_type' => 'tipo', 'municipality' => 'municipio', 'state' => 'estado', 'city' => 'ciudad'];
 
     public function handle(): int
     {
@@ -45,36 +50,44 @@ class ImportSepomex extends Command
         PostalCode::query()->delete();
 
         $header = null;
+        $columns = null;
+        $csv = false;
         $rows = [];
         $total = 0;
 
         while (($line = fgets($handle)) !== false) {
-            // El archivo de Correos viene en ISO-8859-1
+            // El archivo de Correos viene en ISO-8859-1; el CSV del espejo, en UTF-8 con BOM
             $line = rtrim(mb_check_encoding($line, 'UTF-8') ? $line : mb_convert_encoding($line, 'UTF-8', 'ISO-8859-1'), "\r\n");
-            $fields = explode('|', $line);
+            $line = preg_replace('/^\xEF\xBB\xBF/', '', $line);
 
-            // La primera línea es una leyenda; el encabezado es la que trae d_codigo
+            // La primera línea del TXT es una leyenda; el encabezado es la que trae los nombres de columna
             if (! $header) {
-                if (in_array('d_codigo', $fields, true)) {
-                    $header = array_flip($fields);
+                if (str_contains($line, 'd_codigo|')) {
+                    $header = array_flip(explode('|', $line));
+                    $columns = self::TXT_COLUMNS;
+                } elseif (str_starts_with($line, 'codigo_postal,')) {
+                    $header = array_flip(str_getcsv($line));
+                    $columns = self::CSV_COLUMNS;
+                    $csv = true;
                 }
 
                 continue;
             }
 
-            $value = fn (string $column) => trim($fields[$header[$column] ?? -1] ?? '');
-            $code = $value('d_codigo');
-            if (! preg_match('/^\d{5}$/', $code)) {
+            $fields = $csv ? str_getcsv($line) : explode('|', $line);
+            $value = fn (string $key) => trim($fields[$header[$columns[$key]] ?? -1] ?? '');
+            $code = str_pad($value('code'), 5, '0', STR_PAD_LEFT);
+            if (! preg_match('/^\d{5}$/', $code) || $value('settlement') === '') {
                 continue;
             }
 
             $rows[] = [
                 'code' => $code,
-                'settlement' => $value('d_asenta'),
-                'settlement_type' => $value('d_tipo_asenta') ?: null,
-                'municipality' => $value('D_mnpio'),
-                'state' => $value('d_estado'),
-                'city' => $value('d_ciudad') ?: null,
+                'settlement' => $value('settlement'),
+                'settlement_type' => $value('settlement_type') ?: null,
+                'municipality' => $value('municipality'),
+                'state' => $value('state'),
+                'city' => $value('city') ?: null,
             ];
 
             if (count($rows) === 1000) {
@@ -85,7 +98,7 @@ class ImportSepomex extends Command
         }
 
         if (! $header) {
-            throw new RuntimeException('El archivo no tiene el encabezado de SEPOMEX (d_codigo|d_asenta|d_tipo_asenta|D_mnpio|d_estado|d_ciudad...).');
+            throw new RuntimeException('El archivo no tiene el encabezado de SEPOMEX (d_codigo|d_asenta|... en TXT, o codigo_postal,asentamiento,... en CSV).');
         }
 
         if ($rows) {

@@ -194,6 +194,17 @@ class RequestCreditFlowTest extends TestCase
         $this->assertSame(2, PostalCode::count());
         $this->assertSame('Álvaro Obregón', PostalCode::lookup('01000')['municipality']);
 
+        // El CSV del espejo (UTF-8 con BOM, comas y comillas) también se acepta y reemplaza al anterior
+        file_put_contents($file, "\xEF\xBB\xBF".implode("\n", [
+            'codigo_postal,asentamiento,tipo,municipio,estado,ciudad,zona,url',
+            '06700,Roma Norte,Colonia,Cuauhtémoc,Ciudad de México,Ciudad de México,Urbano,https://example.com/06700',
+            '80000,"Centro, Sector 1",Colonia,Culiacán,Sinaloa,Culiacán Rosales,Urbano,https://example.com/80000',
+        ]));
+        $this->artisan('sepomex:import', ['file' => $file])->assertSuccessful();
+        $this->assertSame(2, PostalCode::count());
+        $this->assertSame('Cuauhtémoc', PostalCode::lookup('06700')['municipality']);
+        $this->assertEquals(['Centro, Sector 1'], PostalCode::lookup('80000')['settlements']->all());
+
         // Un archivo que no es de Correos no borra el catálogo cargado
         file_put_contents($file, "hola\nmundo");
         $this->artisan('sepomex:import', ['file' => $file])->assertFailed();
