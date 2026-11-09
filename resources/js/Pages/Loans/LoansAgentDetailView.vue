@@ -614,6 +614,20 @@ async function updateDocuments() {
                                                         ?.postal_code
                                                     " />
                                         </div>
+                                        <div>
+                                            <label for="municipality"
+                                                class="mb-2 block text-sm font-medium text-gray-900 dark:text-white">Municipio</label>
+                                            <input type="text" id="municipality" readonly
+                                                class="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 dark:border-gray-500 dark:bg-gray-600 dark:text-white"
+                                                :value="loan?.customer?.addresses[0]?.municipality ?? 'No capturado'" />
+                                        </div>
+                                        <div>
+                                            <label for="address_state"
+                                                class="mb-2 block text-sm font-medium text-gray-900 dark:text-white">Estado</label>
+                                            <input type="text" id="address_state" readonly
+                                                class="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 dark:border-gray-500 dark:bg-gray-600 dark:text-white"
+                                                :value="loan?.customer?.addresses[0]?.state ?? 'No capturado'" />
+                                        </div>
                                     </div>
                                     <div class="flex justify-start gap-4">
                                         <div>
@@ -662,6 +676,22 @@ async function updateDocuments() {
                                             <input type="text" name="area" id="area" placeholder=""
                                                 class="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-600 dark:text-white dark:placeholder-gray-400"
                                                 :value="`${loan?.customer?.employment?.area}`" />
+                                        </div>
+                                        <div>
+                                            <label for="main_activity"
+                                                class="mb-2 block text-sm font-medium text-gray-900 dark:text-white">Giro</label>
+                                            <input type="text" id="main_activity" readonly
+                                                class="block w-full rounded-lg border border-gray-300 bg-gray-50 p-2.5 text-sm text-gray-900 dark:border-gray-500 dark:bg-gray-600 dark:text-white"
+                                                :value="loan?.customer?.employment?.main_activity" />
+                                        </div>
+                                        <div>
+                                            <label for="pld_activity"
+                                                class="mb-2 block text-sm font-medium text-gray-900 dark:text-white">Sector PLD declarado</label>
+                                            <input type="text" id="pld_activity" readonly
+                                                :class="['block w-full rounded-lg border p-2.5 text-sm',
+                                                    loan?.customer?.employment?.pld_activity && loan.customer.employment.pld_activity !== 'Ninguna de las anteriores'
+                                                        ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-gray-300 bg-gray-50 text-gray-900']"
+                                                :value="loan?.customer?.employment?.pld_activity ?? 'No capturado'" />
                                         </div>
                                         <div>
                                             <label for="company"

@@ -8,6 +8,7 @@ use App\Http\Responses\JsonResponse;
 use App\Models\Customer;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\PostalCode;
 use App\Models\Status;
 use App\Rules\Clabe;
 use App\Rules\Curp;
@@ -16,6 +17,7 @@ use App\Services\AuditLogger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class RequestCreditController extends Controller
 {
@@ -89,20 +91,34 @@ class RequestCreditController extends Controller
     {
         // Letras, dígitos, guiones, diagonal y espacios: 12-A, 4B, S/N, Depto 3
         $number = ['regex:/^[\pL\pN\s\-\/.#]+$/u', 'max:20'];
+        // Con el catálogo de SEPOMEX cargado, municipio y estado salen del código postal y no de lo que se escriba
+        $catalog = preg_match('/^\d{5}$/', (string) $request->postal_code) ? PostalCode::lookup($request->postal_code) : null;
+
         $request->validate([
+            'street' => 'required|string|max:255',
             'outdoor_number' => ['required', ...$number],
             'interior_number' => ['nullable', ...$number],
+            'suburb' => 'required|string|max:255',
+            'postal_code' => 'required|digits:5',
+            'municipality' => [$catalog ? 'nullable' : 'required', 'string', 'max:255'],
+            'state' => [$catalog ? 'nullable' : 'required', 'string', 'max:255'],
+            'years_living' => 'required|integer|min:0|max:99',
+            'type' => 'required|string|max:50',
         ], [
             'outdoor_number.regex' => 'El número exterior solo admite letras, números, guiones y diagonal.',
             'interior_number.regex' => 'El número interior solo admite letras, números, guiones y diagonal.',
-            '*.max' => 'Máximo 20 caracteres.',
+            'postal_code.digits' => 'El código postal debe tener 5 dígitos.',
+            'municipality.required' => 'Escribe tu municipio o alcaldía.',
+            'state.required' => 'Escribe tu estado.',
+            '*.max' => 'Máximo :max caracteres.',
         ]);
 
         $status = Status::where('name', 'ADDRESS REGISTERED')->firstOrFail();
         $address = $customer->addresses()->updateOrCreate([],
-            $request->only([
-                'street', 'interior_number', 'outdoor_number', 'suburb', 'postal_code', 'years_living', 'type'
-            ])
+            array_merge(
+                $request->only(['street', 'interior_number', 'outdoor_number', 'suburb', 'postal_code', 'municipality', 'state', 'years_living', 'type']),
+                $catalog ? ['municipality' => $catalog['municipality'], 'state' => $catalog['state']] : []
+            )
         );
 
         $customer->status_id = $status->id;
@@ -150,8 +166,9 @@ class RequestCreditController extends Controller
     {
         $request->validate([
             'type' => 'required|string|max:255',
-            'area' => 'required|string|max:255',
-            'main_activity' => 'required|string|max:255',
+            'area' => ['required', Rule::in(config('catalogs.work_areas'))],
+            'main_activity' => ['required', Rule::in(config('catalogs.main_activities'))],
+            'pld_activity' => ['required', Rule::in(config('catalogs.pld_activities'))],
             'seniority_working' => 'required|integer|min:0|max:80',
             'monthly_income' => 'required|numeric|min:0',
             'monthly_expenses' => 'required|numeric|min:0',
@@ -160,6 +177,10 @@ class RequestCreditController extends Controller
             'type.required' => 'Selecciona tu situación laboral.',
             'area.required' => 'Selecciona tu área de trabajo.',
             'main_activity.required' => 'Selecciona tu actividad principal.',
+            'pld_activity.required' => 'Indica si tu actividad se relaciona con alguno de los sectores de la lista.',
+            'area.in' => 'Selecciona un área de la lista.',
+            'main_activity.in' => 'Selecciona una actividad de la lista.',
+            'pld_activity.in' => 'Selecciona una opción de la lista.',
             'seniority_working.required' => 'Captura tu antigüedad laboral en años.',
             'seniority_working.integer' => 'Los años de experiencia deben ser un número entero.',
             'seniority_working.max' => 'Los años de experiencia no pueden ser más de 80.',
@@ -173,6 +194,7 @@ class RequestCreditController extends Controller
             'type' => $request->type,
             'area' => $request->area,
             'main_activity' => $request->main_activity,
+            'pld_activity' => $request->pld_activity,
             'company' => $request->company,
             'job' => $request->job,
             'seniority_working' => $request->seniority_working,

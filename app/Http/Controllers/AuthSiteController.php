@@ -109,6 +109,13 @@ class AuthSiteController extends Controller
             }
         }
 
-        return Inertia::render('RequestCredit', ['simulation' => $simulation]);
+        return Inertia::render('RequestCredit', [
+            'simulation' => $simulation,
+            'catalogs' => [
+                'workAreas' => config('catalogs.work_areas'),
+                'mainActivities' => config('catalogs.main_activities'),
+                'pldActivities' => config('catalogs.pld_activities'),
+            ],
+        ]);
     }
 }

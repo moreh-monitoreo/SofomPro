@@ -2,8 +2,67 @@
     <div class="space-y-6">
         <h2 class="text-lg font-medium text-gray-900">Información domicilio</h2>
 
-        <form @submit.prevent="saveAndContinue" class="space-y-4">
+        <form @submit.prevent="handleSubmit" class="space-y-4">
             <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <FormInput
+                    v-model="form.postal_code"
+                    label="Código postal"
+                    required
+                    placeholder="5 dígitos"
+                    :error="errors.postal_code"
+                    @blur="validateField('postal_code')"
+                />
+                <p class="self-end pb-2 text-sm text-gray-500">
+                    <template v-if="lookup.loading">Buscando tu código postal…</template>
+                    <template v-else-if="lookup.found">Encontramos {{ lookup.settlements.length }} colonia(s) para este código.</template>
+                    <template v-else-if="lookup.notFound">No encontramos este código; escribe tu colonia, municipio y estado.</template>
+                    <template v-else>Escribe tu código postal y llenamos municipio y estado.</template>
+                </p>
+
+                <div v-if="lookup.found && !manualSuburb">
+                    <label class="block text-sm font-medium text-gray-700">
+                        Colonia
+                        <span class="text-red-500">*</span>
+                    </label>
+                    <select
+                        v-model="form.suburb"
+                        :class="[
+                            'mt-1 block w-full rounded-md shadow-sm transition-colors duration-200',
+                            errors.suburb ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500',
+                        ]"
+                        @change="onSuburbSelected"
+                    >
+                        <option value="">Seleccione su colonia</option>
+                        <option v-for="settlement in lookup.settlements" :key="settlement" :value="settlement">{{ settlement }}</option>
+                        <option :value="OTHER">Mi colonia no aparece</option>
+                    </select>
+                    <span v-if="errors.suburb" class="mt-1 text-sm text-red-600">{{ errors.suburb }}</span>
+                </div>
+                <FormInput
+                    v-else
+                    v-model="form.suburb"
+                    label="Colonia"
+                    required
+                    :error="errors.suburb"
+                    @blur="validateField('suburb')"
+                />
+
+                <FormInput
+                    v-model="form.municipality"
+                    label="Municipio o alcaldía"
+                    required
+                    :disabled="lookup.found"
+                    :error="errors.municipality"
+                    @blur="validateField('municipality')"
+                />
+                <FormInput
+                    v-model="form.state"
+                    label="Estado"
+                    required
+                    :disabled="lookup.found"
+                    :error="errors.state"
+                    @blur="validateField('state')"
+                />
                 <FormInput
                     v-model="form.street"
                     label="Calle"
@@ -23,20 +82,6 @@
                     v-model="form.interior_number"
                     label="Número interior (depto.)"
                     placeholder="Ej. 4, B-2"
-                />
-                <FormInput
-                    v-model="form.suburb"
-                    label="Colonia"
-                    required
-                    :error="errors.suburb"
-                    @blur="validateField('suburb')"
-                />
-                <FormInput
-                    v-model="form.postal_code"
-                    label="Código postal"
-                    required
-                    :error="errors.postal_code"
-                    @blur="validateField('postal_code')"
                 />
                 <FormInput
                     v-model="form.years_living"
@@ -93,9 +138,12 @@
 </template>
 
 <script>
-import { onMounted, ref, watch } from 'vue';
+import axios from 'axios';
+import { onMounted, reactive, ref, watch } from 'vue';
 import FormInput from '../FormInput.vue';
 import { useRequestCreditStore } from '../../stores/requestCredit';
+
+const OTHER = '__other__';
 
 export default {
     props: {
@@ -109,20 +157,50 @@ export default {
 
     emits: ['update-form', 'save-step'],
 
-    setup(props, { emit }) {
+    setup() {
         const requestCreditStore = useRequestCreditStore();
         const form = ref({ ...requestCreditStore.addressInfo });
-        
         const errors = ref({});
+        const lookup = reactive({ loading: false, found: false, notFound: false, settlements: [] });
+        const manualSuburb = ref(false);
 
-        // Cargar datos existentes si los hay
+        // Catálogo de SEPOMEX: con el código postal se llenan municipio y estado, y la colonia se elige de la lista
+        const searchPostalCode = async (code) => {
+            Object.assign(lookup, { loading: true, found: false, notFound: false, settlements: [] });
+            try {
+                const { data } = await axios.get(route('postal-codes.show', code));
+                if (form.value.postal_code !== code) return;
+                Object.assign(lookup, { found: true, settlements: data.data.settlements });
+                form.value.municipality = data.data.municipality;
+                form.value.state = data.data.state;
+                manualSuburb.value = Boolean(form.value.suburb) && !data.data.settlements.includes(form.value.suburb);
+            } catch {
+                if (form.value.postal_code === code) lookup.notFound = true;
+            } finally {
+                lookup.loading = false;
+            }
+        };
+
         onMounted(() => {
             if (requestCreditStore.addressInfo) {
                 form.value = { ...requestCreditStore.addressInfo };
             }
+            if (/^\d{5}$/.test(form.value.postal_code || '')) searchPostalCode(form.value.postal_code);
         });
 
-        // Actualizar datos del formulario principal cuando cambie el formulario local
+        watch(
+            () => form.value.postal_code,
+            (code, previous) => {
+                if (code === previous) return;
+                if (/^\d{5}$/.test(code || '')) {
+                    if (previous && /^\d{5}$/.test(previous)) form.value.suburb = '';
+                    searchPostalCode(code);
+                } else {
+                    Object.assign(lookup, { found: false, notFound: false, settlements: [] });
+                }
+            },
+        );
+
         watch(
             form,
             (newValue) => {
@@ -131,25 +209,28 @@ export default {
             { deep: true },
         );
 
+        const onSuburbSelected = () => {
+            if (form.value.suburb === OTHER) {
+                form.value.suburb = '';
+                manualSuburb.value = true;
+            }
+            validateField('suburb');
+        };
+
         const validateField = (field) => {
             errors.value[field] = '';
 
-            switch (field) {
-                case 'street':
-                case 'outdoor_number':
-                case 'suburb':
-                case 'postal_code':
-                case 'years_living':
-                case 'type':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
+            if (field === 'postal_code' && !/^\d{5}$/.test(form.value.postal_code || '')) {
+                errors.value.postal_code = 'El código postal debe tener 5 dígitos';
+                return;
+            }
+            if (!form.value[field]) {
+                errors.value[field] = 'Este campo es requerido';
             }
         };
 
         const validateForm = () => {
-            const requiredFields = ['street', 'outdoor_number', 'suburb', 'postal_code', 'years_living', 'type'];
+            const requiredFields = ['postal_code', 'suburb', 'municipality', 'state', 'street', 'outdoor_number', 'years_living', 'type'];
             requiredFields.forEach(field => validateField(field));
             return !Object.values(errors.value).some(error => error !== '');
         };
@@ -167,8 +248,13 @@ export default {
         };
 
         return {
+            OTHER,
             form,
             errors,
+            lookup,
+            manualSuburb,
+            onSuburbSelected,
+            validateField,
             handleSubmit,
             back,
         };

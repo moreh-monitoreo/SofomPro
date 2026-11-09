@@ -3,6 +3,9 @@
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\LoanProductController;
 use App\Http\Controllers\Admin\PaymentCorrectionController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\PostalCodeController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\OverdueController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\PortfolioController;
@@ -39,6 +42,8 @@ Route::get('contacto', [AuthSiteController::class, 'contact'])->name('site.conta
 Route::post('contacto', [ContactRequestController::class, 'store'])->middleware('throttle:5,1')->name('site.contact.store');
 Route::get('aviso-de-privacidad', [AuthSiteController::class, 'privacy'])->name('site.privacy');
 Route::get('prestamo-personal/solicitar', [AuthSiteController::class, 'requestcredit'])->name('site.requestcredit');
+
+Route::get('postal-codes/{code}', [PostalCodeController::class, 'show'])->middleware('throttle:60,1')->name('postal-codes.show')->where('code', '[0-9]{5}');
 
 Route::prefix('request-credit')->middleware('throttle:60,1')->group(function () {
     Route::post('customer', [RequestCreditController::class, 'createcustomer']);
@@ -97,6 +102,8 @@ Route::middleware(['auth', 'two-factor', 'role:'.implode('|', User::STAFF_ROLES)
     Route::post('requests/search', [RequestsController::class, 'search'])->name('requests.search');
 
     Route::get('statistics/payments', [StatisticsController::class, 'payments'])->name('statistics.payments');
+    Route::get('reports', [ReportController::class, 'index'])->middleware('role:'.implode('|', User::APPROVER_ROLES))->name('reports.index');
+    Route::get('reports/aging/export', [ReportController::class, 'exportAging'])->middleware('role:'.implode('|', User::APPROVER_ROLES))->name('reports.aging.export');
 
     Route::get('document-types', [DocumentTypeController::class, 'index'])->name('document-types.index');
     Route::post('document-types', [DocumentTypeController::class, 'store'])->name('document-types.store');
@@ -110,6 +117,14 @@ Route::middleware(['auth', 'two-factor', 'role:Administrator'])->prefix('admin')
     Route::put('loan-products/{type}', [LoanProductController::class, 'update'])->name('loan-products.update');
     Route::post('payments/{detail}/revert', [PaymentCorrectionController::class, 'revert'])->name('payments.revert')->whereNumber('detail');
     Route::post('movements/{movement}/revert', [PaymentCorrectionController::class, 'revertMovement'])->name('movements.revert')->whereNumber('movement');
+
+    Route::get('users', [UserController::class, 'index'])->name('users.index');
+    Route::post('users', [UserController::class, 'store'])->name('users.store');
+    Route::put('users/{user}', [UserController::class, 'update'])->name('users.update')->whereNumber('user');
+    Route::post('users/{user}/deactivate', [UserController::class, 'deactivate'])->name('users.deactivate')->whereNumber('user');
+    Route::post('users/{user}/reactivate', [UserController::class, 'reactivate'])->name('users.reactivate')->whereNumber('user');
+    Route::post('users/{user}/two-factor/reset', [UserController::class, 'resetTwoFactor'])->name('users.two-factor.reset')->whereNumber('user');
+    Route::post('users/{user}/invitation', [UserController::class, 'invite'])->name('users.invite')->whereNumber('user');
 });
 
 Route::middleware('auth')->prefix('two-factor')->name('two-factor.')->group(function () {

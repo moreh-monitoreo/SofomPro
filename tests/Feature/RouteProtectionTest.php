@@ -21,7 +21,7 @@ class RouteProtectionTest extends TestCase
         '/', 'quienes-somos', 'prestamo-personal', 'prestamo-garantia', 'contacto', 'aviso-de-privacidad',
         'prestamo-personal/solicitar', 'success', 'cancel', 'stripe/webhook', 'up',
         'api/simulator', 'api/simulator/config',
-        'request-credit/*',
+        'request-credit/*', 'postal-codes/{code}',
         'login', 'forgot-password', 'reset-password', 'reset-password/{token}', 'sanctum/csrf-cookie',
         'storage/{path}',
     ];
@@ -29,7 +29,7 @@ class RouteProtectionTest extends TestCase
     /** Rutas del equipo: requieren sesión y uno de los roles del equipo (User::STAFF_ROLES). */
     private const STAFF = [
         'loans', 'loans/*', 'customers/{id}', 'requests', 'requests/*', 'statistics/*', 'document-types', 'document-types/*',
-        'pipeline', 'portfolio/*',
+        'pipeline', 'portfolio/*', 'reports', 'reports/*',
     ];
 
     private function routes(): array

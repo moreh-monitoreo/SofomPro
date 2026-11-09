@@ -15,6 +15,8 @@ import {
     KanbanSquare,
     AlertTriangle,
     ShieldCheck,
+    Users,
+    BarChart3,
 } from 'lucide-vue-next';
 import { usePage } from '@inertiajs/vue3';
 import { hasAccess } from '@/lib/auth';
@@ -104,6 +106,12 @@ const page = usePage();
                             <span>Pagos</span>
                         </a>
                     </SidebarMenuButton>
+                    <SidebarMenuButton v-if="hasAccess(['Administrator', 'Gerente'], page.props.auth.roles)" as-child>
+                        <a :href="route('reports.index')">
+                            <BarChart3 />
+                            <span>Reportes</span>
+                        </a>
+                    </SidebarMenuButton>
                 </SidebarMenuItem>
             </SidebarMenu>
 
@@ -120,6 +128,12 @@ const page = usePage();
                         <a :href="route('admin.loan-products.index')">
                             <Percent />
                             <span>Productos y tasas</span>
+                        </a>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton v-if="hasAccess(['Administrator'], page.props.auth.roles)" as-child>
+                        <a :href="route('admin.users.index')">
+                            <Users />
+                            <span>Usuarios</span>
                         </a>
                     </SidebarMenuButton>
                     <SidebarMenuButton v-if="hasAccess(['Administrator'], page.props.auth.roles)" as-child>

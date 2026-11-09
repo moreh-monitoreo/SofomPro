@@ -12,24 +12,14 @@
                     <select
                         v-model="form.type"
                         @change="validateField('type')"
-                        :class="[
-                            'mt-1 block w-full rounded-md border-gray-300 shadow-sm',
-                            'focus:border-blue-500 focus:ring-blue-500',
-                            errors.type
-                                ? 'border-red-300'
-                                : 'border-gray-300',
-                        ]"
+                        :class="selectClass(errors.type)"
                     >
                         <option value="">Seleccione una situación laboral</option>
                         <option value="Emprendedor">Emprendedor</option>
-                        <option value="Dueño de Negocio">
-                            Dueño de Negocio
-                        </option>
+                        <option value="Dueño de Negocio">Dueño de Negocio</option>
                         <option value="Empleado formal">Empleado Formal</option>
                         <option value="Freelancer">Freelancer</option>
-                        <option value="Empleado informal">
-                            Empleado Informal
-                        </option>
+                        <option value="Empleado informal">Empleado Informal</option>
                         <option value="Jornalero">Jornalero</option>
                     </select>
                     <span v-if="errors.type" class="mt-1 text-sm text-red-600">{{ errors.type }}</span>
@@ -39,89 +29,33 @@
                         Área de Trabajo
                         <span class="text-red-500">*</span>
                     </label>
-                    <select
-                        v-model="form.area"
-                        @change="validateField('area')"
-                        :class="[
-                            'mt-1 block w-full rounded-md border-gray-300 shadow-sm',
-                            'focus:border-blue-500 focus:ring-blue-500',
-                            errors.area
-                                ? 'border-red-300'
-                                : 'border-gray-300',
-                        ]"
-                    >
+                    <select v-model="form.area" @change="validateField('area')" :class="selectClass(errors.area)">
                         <option value="">Seleccione un área</option>
-                        <option value="Medicina">Medicina</option>
-                        <option value="Negocios">Negocios</option>
-                        <option value="Tecnología">Tecnología</option>
-                        <option value="Servicios">Servicios</option>
-                        <option value="Agricultura">Agricultura</option>
-                        <option value="Pesca">Pesca</option>
-                        <option value="Apicultura">Apicultura</option>
-                        <option value="Ganadería">Ganadería</option>
-                        <option value="Albañilería">Albañilería</option>
+                        <option v-for="area in catalogs.workAreas" :key="area" :value="area">{{ area }}</option>
                     </select>
                     <span v-if="errors.area" class="mt-1 text-sm text-red-600">{{ errors.area }}</span>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">
-                        Actividad Principal
+                        Actividad Principal (giro)
                         <span class="text-red-500">*</span>
                     </label>
-                    <select
-                        v-model="form.main_activity"
-                        @change="validateField('main_activity')"
-                        :class="[
-                            'mt-1 block w-full rounded-md border-gray-300 shadow-sm',
-                            'focus:border-blue-500 focus:ring-blue-500',
-                            errors.main_activity
-                                ? 'border-red-300'
-                                : 'border-gray-300',
-                        ]"
-                    >
+                    <select v-model="form.main_activity" @change="validateField('main_activity')" :class="selectClass(errors.main_activity)">
                         <option value="">Seleccione una actividad</option>
-                        <option value="Agua">Agua</option>
-                        <option value="Armas y productos militares">
-                            Armas y productos militares
-                        </option>
-                        <option value="Automotriz / autopartes">
-                            Automotriz / autopartes
-                        </option>
-                        <option value="Cómputo y electrónica">
-                            Cómputo y electrónica
-                        </option>
-                        <option value="Comunicaciones">Comunicaciones</option>
-                        <option value="Cosméticos">Cosméticos</option>
-                        <option value="Cuero y calzado">Cuero y calzado</option>
-                        <option value="Electricidad">Electricidad</option>
-                        <option value="Electrodomésticos">
-                            Electrodomésticos
-                        </option>
-                        <option value="Farmacéutico">Farmacéutico</option>
-                        <option value="Gas">Gas</option>
-                        <option value="Joyas">Joyas</option>
-                        <option value="Juguetes">Juguetes</option>
-                        <option value="Maquinaria y equipo">
-                            Maquinaria y equipo
-                        </option>
-                        <option value="Metalúrgica">Metalúrgica</option>
-                        <option value="Minería">Minería</option>
-                        <option value="Muebles">Muebles</option>
-                        <option value="Piedras y metales preciosos">
-                            Piedras y metales preciosos
-                        </option>
-                        <option value="Tabaco">Tabaco</option>
-                        <option value="Vehículos de transporte aéreos">
-                            Vehículos de transporte aéreos
-                        </option>
-                        <option value="Vehículos de transporte marítimos">
-                            Vehículos de transporte marítimos
-                        </option>
-                        <option value="Vehículos de transporte terrestres">
-                            Vehículos de transporte terrestres
-                        </option>
+                        <option v-for="activity in catalogs.mainActivities" :key="activity" :value="activity">{{ activity }}</option>
                     </select>
                     <span v-if="errors.main_activity" class="mt-1 text-sm text-red-600">{{ errors.main_activity }}</span>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        ¿Tu actividad se relaciona con alguno de estos sectores?
+                        <span class="text-red-500">*</span>
+                    </label>
+                    <select v-model="form.pld_activity" @change="validateField('pld_activity')" :class="selectClass(errors.pld_activity)">
+                        <option value="">Seleccione una opción</option>
+                        <option v-for="activity in catalogs.pldActivities" :key="activity" :value="activity">{{ activity }}</option>
+                    </select>
+                    <span v-if="errors.pld_activity" class="mt-1 text-sm text-red-600">{{ errors.pld_activity }}</span>
                 </div>
                 <FormInput
                     v-model="form.company"
@@ -153,14 +87,7 @@
                     <label class="block text-sm font-medium text-gray-700">
                         ¿Tienes seguro social?
                     </label>
-                    <select
-                        v-model="form.imss"
-                        id=""
-                        :class="[
-                            'mt-1 block w-full rounded-md border-gray-300 shadow-sm',
-                            'focus:border-blue-500 focus:ring-blue-500',
-                        ]"
-                    >
+                    <select v-model="form.imss" :class="selectClass()">
                         <option value="">Seleccione una opción</option>
                         <option value="Si">Si</option>
                         <option value="No">No</option>
@@ -172,14 +99,7 @@
                         ¿Tienes seguro de gastos médicos mayores?
                         <span class="text-red-500">*</span>
                     </label>
-                    <select
-                        v-model="form.insurance_major_medical_expenses"
-                        id=""
-                        :class="[
-                            'mt-1 block w-full rounded-md border-gray-300 shadow-sm',
-                            'focus:border-blue-500 focus:ring-blue-500',
-                        ]"
-                    >
+                    <select v-model="form.insurance_major_medical_expenses" :class="selectClass()">
                         <option value="">Seleccione una opción</option>
                         <option value="Si">Si</option>
                         <option value="No">No</option>
@@ -231,6 +151,7 @@
 
 <script>
 import { onMounted, ref, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import FormInput from '../FormInput.vue';
 import { useRequestCreditStore } from '@/stores/requestCredit';
 
@@ -248,6 +169,8 @@ export default {
 
     setup(props, { emit }) {
         const requestCreditStore = useRequestCreditStore();
+        // Los catálogos vienen del servidor (config/catalogs.php), que valida contra las mismas listas
+        const catalogs = usePage().props.catalogs ?? { workAreas: [], mainActivities: [], pldActivities: [] };
         const form = ref({ ...requestCreditStore.employmentInfo });
         const errors = ref({});
 
@@ -267,35 +190,15 @@ export default {
             { deep: true },
         );
 
+        const selectClass = (error) => [
+            'mt-1 block w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500',
+            error ? 'border-red-300' : 'border-gray-300',
+        ];
+
         const validateField = (field) => {
             errors.value[field] = '';
 
             switch (field) {
-                case 'type':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'area':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'main_activity':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'company':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'job':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
                 case 'seniority_working':
                     if (form.value[field] === '' || form.value[field] === null) {
                         errors.value[field] = 'Este campo es requerido';
@@ -303,41 +206,20 @@ export default {
                         errors.value[field] = 'Captura los años como número entero (0 a 80)';
                     }
                     break;
-                case 'phone':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'imss':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'insurance_major_medical_expenses':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
-                case 'monthly_income':
-                    if (!form.value[field]) {
-                        errors.value[field] = 'Este campo es requerido';
-                    }
-                    break;
                 case 'monthly_expenses':
                     if (form.value[field] === '' || form.value[field] === null || Number(form.value[field]) < 0) {
                         errors.value[field] = 'Este campo es requerido';
                     }
                     break;
-                case 'other_income':
+                default:
                     if (!form.value[field]) {
                         errors.value[field] = 'Este campo es requerido';
                     }
-                    break;
             }
         };
 
         const validateForm = () => {
-            const requiredFields = ['type', 'area', 'main_activity', 'company', 'job', 'seniority_working', 'phone', 'imss', 'insurance_major_medical_expenses', 'monthly_income', 'monthly_expenses', 'other_income'];
+            const requiredFields = ['type', 'area', 'main_activity', 'pld_activity', 'company', 'job', 'seniority_working', 'phone', 'imss', 'insurance_major_medical_expenses', 'monthly_income', 'monthly_expenses', 'other_income'];
             requiredFields.forEach(field => validateField(field));
             return !Object.values(errors.value).some(error => error !== '');
         };
@@ -355,8 +237,11 @@ export default {
         };
 
         return {
+            catalogs,
             form,
             errors,
+            selectClass,
+            validateField,
             handleSubmit,
             back,
         };

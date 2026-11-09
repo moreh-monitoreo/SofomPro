@@ -29,6 +29,12 @@ class AuditLog extends Model
         'document.deleted' => 'Eliminó un documento',
         'account.invited' => 'Envió invitación de cuenta',
         'product.updated' => 'Cambió un producto o tasa',
+        'user.created' => 'Dio de alta a un usuario',
+        'user.updated' => 'Cambió nombre o rol de un usuario',
+        'user.invited' => 'Envió invitación a un usuario',
+        'user.deactivated' => 'Desactivó a un usuario',
+        'user.reactivated' => 'Reactivó a un usuario',
+        'user.two_factor_reset' => 'Restableció la verificación en dos pasos',
     ];
 
     public function user()

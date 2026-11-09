@@ -16,6 +16,14 @@ class User extends Authenticatable
     /** Roles del equipo: entran al panel interno y deben usar verificación en dos pasos. */
     public const STAFF_ROLES = ['Administrator', 'Advisor', 'Analista de crédito', 'Gerente'];
 
+    /** Nombre en español y qué puede hacer cada rol del equipo (para la pantalla de usuarios). */
+    public const ROLE_LABELS = [
+        'Administrator' => ['label' => 'Administrador', 'description' => 'Acceso completo: usuarios, productos, bitácora y correcciones de pagos.'],
+        'Gerente' => ['label' => 'Gerente', 'description' => 'Aprueba o rechaza solicitudes, registra desembolsos y consulta reportes.'],
+        'Analista de crédito' => ['label' => 'Analista de crédito', 'description' => 'Captura Buró y PLD y da por validadas las solicitudes.'],
+        'Advisor' => ['label' => 'Asesor', 'description' => 'Consulta expedientes, sube documentos y registra pagos.'],
+    ];
+
     /** Quién captura Buró y PLD y da por validada una solicitud. */
     public const VALIDATOR_ROLES = ['Administrator', 'Analista de crédito'];
 
@@ -25,6 +33,12 @@ class User extends Authenticatable
     public function isStaff(): bool
     {
         return $this->hasAnyRole(self::STAFF_ROLES);
+    }
+
+    /** Una cuenta desactivada por un administrador no puede iniciar sesión. */
+    public function isActive(): bool
+    {
+        return $this->deactivated_at === null;
     }
 
     /**
@@ -66,6 +80,7 @@ class User extends Authenticatable
             'two_factor_secret' => 'encrypted',
             'two_factor_recovery_codes' => 'encrypted:array',
             'two_factor_confirmed_at' => 'datetime',
+            'deactivated_at' => 'datetime',
             'password' => 'hashed',
         ];
     }

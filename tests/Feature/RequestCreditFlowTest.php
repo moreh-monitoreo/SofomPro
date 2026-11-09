@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Customer;
 use App\Models\Loan;
 use App\Models\LoanProduct;
+use App\Models\PostalCode;
 use Database\Seeders\StatusesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -126,7 +127,7 @@ class RequestCreditFlowTest extends TestCase
     public function test_the_street_numbers_accept_letters_and_dashes(): void
     {
         $data = $this->startRequest();
-        $base = ['street' => 'Av. Reforma', 'suburb' => 'Centro', 'postal_code' => '80000', 'years_living' => 3, 'type' => 'Propia'];
+        $base = ['street' => 'Av. Reforma', 'suburb' => 'Centro', 'postal_code' => '80000', 'municipality' => 'Culiacán', 'state' => 'Sinaloa', 'years_living' => 3, 'type' => 'Propia'];
 
         $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => '12-A', 'interior_number' => 'B-203'])->assertCreated();
 
@@ -141,6 +142,63 @@ class RequestCreditFlowTest extends TestCase
         $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => '<b>1</b>'])->assertJsonValidationErrors('outdoor_number');
         $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => ''])->assertJsonValidationErrors('outdoor_number');
         $this->postJson("/request-credit/customer/{$data['id']}/address", $base + ['outdoor_number' => str_repeat('1', 21)])->assertJsonValidationErrors('outdoor_number');
+    }
+
+    public function test_the_postal_code_catalog_fills_municipality_and_state(): void
+    {
+        PostalCode::insert([
+            ['code' => '80000', 'settlement' => 'Centro', 'settlement_type' => 'Colonia', 'municipality' => 'Culiacán', 'state' => 'Sinaloa', 'city' => 'Culiacán Rosales'],
+            ['code' => '80000', 'settlement' => 'Almada', 'settlement_type' => 'Colonia', 'municipality' => 'Culiacán', 'state' => 'Sinaloa', 'city' => 'Culiacán Rosales'],
+        ]);
+
+        $this->getJson('/postal-codes/80000')->assertOk()
+            ->assertJsonPath('data.municipality', 'Culiacán')
+            ->assertJsonPath('data.state', 'Sinaloa')
+            ->assertJsonPath('data.settlements', ['Almada', 'Centro']);
+        $this->getJson('/postal-codes/99999')->assertNotFound();
+
+        // Con el código en el catálogo no hace falta escribir municipio ni estado, y lo escrito no los reemplaza
+        $data = $this->startRequest();
+        $this->postJson("/request-credit/customer/{$data['id']}/address", [
+            'street' => 'Av. Obregón', 'outdoor_number' => '10', 'suburb' => 'Centro', 'postal_code' => '80000',
+            'state' => 'Jalisco', 'years_living' => 2, 'type' => 'Propietario',
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('customer_addresses', ['customer_id' => $data['id'], 'municipality' => 'Culiacán', 'state' => 'Sinaloa']);
+    }
+
+    public function test_without_the_catalog_municipality_and_state_must_be_typed(): void
+    {
+        $data = $this->startRequest();
+
+        $this->postJson("/request-credit/customer/{$data['id']}/address", [
+            'street' => 'Av. Obregón', 'outdoor_number' => '10', 'suburb' => 'Centro', 'postal_code' => '80000', 'years_living' => 2, 'type' => 'Propietario',
+        ])->assertStatus(422)->assertJsonValidationErrors(['municipality', 'state']);
+
+        $this->postJson("/request-credit/customer/{$data['id']}/address", [
+            'street' => 'Av. Obregón', 'outdoor_number' => '10', 'suburb' => 'Centro', 'postal_code' => '8000', 'years_living' => 2, 'type' => 'Propietario',
+        ])->assertStatus(422)->assertJsonValidationErrors('postal_code');
+    }
+
+    public function test_the_sepomex_file_is_imported(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'cp');
+        file_put_contents($file, implode("\r\n", [
+            mb_convert_encoding('El Catálogo Nacional de Códigos Postales, es elaborado por Correos de México', 'ISO-8859-1', 'UTF-8'),
+            'd_codigo|d_asenta|d_tipo_asenta|D_mnpio|d_estado|d_ciudad|d_CP|c_estado|c_oficina|c_CP|c_tipo_asenta|c_mnpio|id_asenta_cpcons|d_zona|c_cve_ciudad',
+            mb_convert_encoding('80000|Centro|Colonia|Culiacán|Sinaloa|Culiacán Rosales|80001|25|80001||09|006|0001|Urbano|01', 'ISO-8859-1', 'UTF-8'),
+            mb_convert_encoding('01000|San Ángel|Colonia|Álvaro Obregón|Ciudad de México|Ciudad de México|01001|09|01001||09|010|0001|Urbano|01', 'ISO-8859-1', 'UTF-8'),
+        ]));
+
+        $this->artisan('sepomex:import', ['file' => $file])->assertSuccessful();
+        $this->assertSame(2, PostalCode::count());
+        $this->assertSame('Álvaro Obregón', PostalCode::lookup('01000')['municipality']);
+
+        // Un archivo que no es de Correos no borra el catálogo cargado
+        file_put_contents($file, "hola\nmundo");
+        $this->artisan('sepomex:import', ['file' => $file])->assertFailed();
+        $this->assertSame(2, PostalCode::count());
+        unlink($file);
     }
 
     public function test_a_session_cannot_edit_another_applicants_record(): void
@@ -203,13 +261,34 @@ class RequestCreditFlowTest extends TestCase
         $this->postJson("/request-credit/customer/{$data['id']}/employment", [
             'type' => 'Empleado formal',
             'area' => 'Servicios',
-            'main_activity' => 'Comercio',
+            'main_activity' => 'Ventas o atención al cliente',
+            'pld_activity' => 'Ninguna de las anteriores',
             'seniority_working' => 3,
             'monthly_income' => 12000,
             'monthly_expenses' => 7500,
         ])->assertCreated();
 
         $this->assertEquals(7500, Customer::find($data['id'])->employment->monthly_expenses);
+        $this->assertSame('Ninguna de las anteriores', Customer::find($data['id'])->employment->pld_activity);
+    }
+
+    public function test_the_employment_catalogs_are_enforced(): void
+    {
+        $data = $this->startRequest();
+
+        $this->postJson("/request-credit/customer/{$data['id']}/employment", [
+            'type' => 'Empleado formal',
+            'area' => 'Astronauta',
+            'main_activity' => 'Comercio',
+            'seniority_working' => 3,
+            'monthly_income' => 12000,
+            'monthly_expenses' => 7500,
+        ])->assertStatus(422)->assertJsonValidationErrors(['area', 'main_activity', 'pld_activity']);
+
+        $this->get('/prestamo-personal/solicitar')->assertInertia(fn ($page) => $page
+            ->where('catalogs.workAreas', config('catalogs.work_areas'))
+            ->where('catalogs.pldActivities', config('catalogs.pld_activities'))
+        );
     }
 
     private function documents(array $override = []): array
