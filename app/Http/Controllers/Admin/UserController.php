@@ -68,7 +68,10 @@ class UserController extends Controller
         });
 
         AuditLogger::record('user.created', $user, after: ['email' => $user->email, 'role' => $data['role']]);
-        $this->sendInvitation($user);
+
+        if (! $this->sendInvitation($user)) {
+            return back()->withErrors(['invitation' => "Se creó la cuenta de {$user->email}, pero no se pudo enviar el correo. Revisa la configuración de correo y usa «Reenviar invitación»."]);
+        }
 
         return back()->with('message', "Se envió la invitación a {$user->email}.");
     }
@@ -155,20 +158,32 @@ class UserController extends Controller
             return back()->withErrors(['user' => 'Reactiva la cuenta antes de enviar la invitación.']);
         }
 
-        $this->sendInvitation($user);
+        if (! $this->sendInvitation($user)) {
+            return back()->withErrors(['user' => "No se pudo enviar el correo a {$user->email}. Revisa la configuración de correo e intenta de nuevo."]);
+        }
 
         return back()->with('message', "Se envió la invitación a {$user->email}.");
     }
 
-    private function sendInvitation(User $user): void
+    /** Un correo que falla no debe tirar la página: se reporta y quien llama decide qué avisar. */
+    private function sendInvitation(User $user): bool
     {
         $token = Password::broker()->createToken($user);
         $url = route('password.reset', ['token' => $token, 'email' => $user->email]);
         $hours = (int) round(config('auth.passwords.'.config('auth.defaults.passwords').'.expire') / 60);
         $role = User::ROLE_LABELS[$this->staffRole($user)]['label'] ?? $this->staffRole($user);
 
-        Mail::to($user->email)->send(new StaffInvitation($user->name, $role, $url, $hours));
+        try {
+            Mail::to($user->email)->send(new StaffInvitation($user->name, $role, $url, $hours));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return false;
+        }
+
         AuditLogger::record('user.invited', $user, after: ['email' => $user->email]);
+
+        return true;
     }
 
     private function staffRole(User $user): ?string

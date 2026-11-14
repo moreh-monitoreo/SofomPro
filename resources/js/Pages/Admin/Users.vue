@@ -25,7 +25,15 @@ const create = () => {
             toast.success(`Usuario creado. Le enviamos la invitación a ${createForm.email}.`);
             createForm.reset();
         },
-        onError: () => toast.error('Revisa los campos marcados en rojo.'),
+        onError: (errors) => {
+            // La cuenta sí se creó; solo falló el correo
+            if (errors.invitation) {
+                toast.error(errors.invitation, { timeout: 10000 });
+                createForm.reset();
+                return;
+            }
+            toast.error('Revisa los campos marcados en rojo.');
+        },
     });
 };
 

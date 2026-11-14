@@ -65,6 +65,22 @@ class AdminUsersTest extends TestCase
         $this->assertTrue(AuditLog::where('action', 'user.created')->where('subject_id', $user->id)->exists());
     }
 
+    public function test_a_mail_failure_keeps_the_user_and_shows_a_message_instead_of_an_error_page(): void
+    {
+        $admin = $this->userWithRole('Administrator');
+        Mail::shouldReceive('to')->andThrow(new \RuntimeException('Connection to smtp.titan.email:587 timed out'));
+
+        $this->actingAs($admin)->post('/admin/users', ['name' => 'Laura', 'email' => 'laura@promas.mx', 'role' => 'Gerente'])
+            ->assertRedirect()->assertSessionHasErrors('invitation');
+
+        $user = User::where('email', 'laura@promas.mx')->firstOrFail();
+        $this->assertTrue($user->hasRole('Gerente'));
+        $this->assertFalse(AuditLog::where('action', 'user.invited')->exists());
+
+        $this->actingAs($admin)->post("/admin/users/{$user->id}/invitation")
+            ->assertRedirect()->assertSessionHasErrors('user');
+    }
+
     public function test_the_email_must_be_new_and_the_role_must_be_a_staff_role(): void
     {
         $admin = $this->userWithRole('Administrator');
