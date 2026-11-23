@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Models\PostalCode;
+use App\Support\MexicanId;
 use Database\Seeders\StatusesSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -31,8 +32,8 @@ class RequestCreditFlowTest extends TestCase
             'maiden_name' => 'López',
             'gender' => 'Femenino',
             'birthday' => '1990-01-01',
-            'curp' => 'PEPA900101MSLRRN01',
-            'rfc' => 'PEPA900101AB1',
+            'curp' => 'PELA900101MSLRPN04',
+            'rfc' => 'PELA900101ABA',
             'state' => 'Sinaloa',
             'email' => 'ana@example.com',
             'phone' => '6671234567',
@@ -96,12 +97,52 @@ class RequestCreditFlowTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors('curp');
     }
 
+    public function test_curp_and_rfc_must_match_the_name_and_have_a_valid_check_digit(): void
+    {
+        // El caso reportado: letras inventadas con fecha correcta
+        $this->postJson('/request-credit/customer', $this->personal(['curp' => 'XXXX900101MSLRPN04', 'rfc' => 'XXXX900101AB1']))
+            ->assertStatus(422)->assertJsonValidationErrors(['curp', 'rfc']);
+
+        // Dígito verificador alterado
+        $this->postJson('/request-credit/customer', $this->personal(['curp' => 'PELA900101MSLRPN05', 'rfc' => 'PELA900101AB1']))
+            ->assertStatus(422)->assertJsonValidationErrors(['curp', 'rfc']);
+
+        // Otro nombre con la misma CURP
+        $this->postJson('/request-credit/customer', $this->personal(['name' => 'Beatriz']))
+            ->assertStatus(422)->assertJsonValidationErrors(['curp', 'rfc']);
+
+        // Acentos, partículas y "María" como primer nombre no estorban
+        $curp = MexicanId::curpInitials('de la Cruz', 'Ruiz', 'María Fernanda').'900101MSL'.MexicanId::curpConsonants('de la Cruz', 'Ruiz', 'María Fernanda').'0';
+        $rfc = MexicanId::rfcInitials('de la Cruz', 'Ruiz', 'María Fernanda').'900101AB';
+        $this->postJson('/request-credit/customer', $this->personal([
+            'name' => 'María', 'second_name' => 'Fernanda', 'last_name' => 'de la Cruz', 'maiden_name' => 'Ruiz', 'email' => 'mf@example.com',
+            'curp' => $curp.MexicanId::curpCheckDigit($curp), 'rfc' => $rfc.MexicanId::rfcCheckDigit($rfc),
+        ]))->assertCreated();
+    }
+
+    public function test_the_id_algorithms_match_real_documents(): void
+    {
+        $this->assertSame('LOOA', MexicanId::curpInitials('López', 'Obrador', 'Andrés Manuel'));
+        $this->assertSame('PBN', MexicanId::curpConsonants('López', 'Obrador', 'Andrés Manuel'));
+        $this->assertSame('7', MexicanId::curpCheckDigit('LOOA531113HTCPBN0'));
+        // Palabra inconveniente (PENE → PXNE) y Ñ → X
+        $this->assertSame('PXNE', MexicanId::curpInitials('Peña', 'Nieto', 'Enrique'));
+        $this->assertSame('XTN', MexicanId::curpConsonants('Peña', 'Nieto', 'Enrique'));
+        $this->assertSame('6', MexicanId::curpCheckDigit('PXNE660720HMCXTN0'));
+        // RFC de prueba publicados por el SAT (física y moral)
+        foreach (['XOJI740919U48', 'CACX7605101P8', 'FUNK671228PH6', 'EKU9003173C9', 'MAS0810247C0'] as $rfc) {
+            $this->assertSame(mb_substr($rfc, -1), MexicanId::rfcCheckDigit(mb_substr($rfc, 0, -1)), $rfc);
+        }
+        $this->assertSame('XOJI', MexicanId::rfcInitials('Xodar', 'Jimenez', 'Ingrid'));
+        $this->assertSame('ORJU', MexicanId::rfcInitials('Ortiz', null, 'Juan'));
+    }
+
     public function test_lowercase_curp_and_rfc_are_accepted_and_normalized(): void
     {
-        $data = $this->startRequest(['curp' => 'pepa900101mslrrn01', 'rfc' => 'pepa900101ab1']);
+        $data = $this->startRequest(['curp' => 'pela900101mslrpn04', 'rfc' => 'pela900101aba']);
 
-        $this->assertSame('PEPA900101MSLRRN01', Customer::find($data['id'])->curp);
-        $this->assertSame('PEPA900101AB1', Customer::find($data['id'])->rfc);
+        $this->assertSame('PELA900101MSLRPN04', Customer::find($data['id'])->curp);
+        $this->assertSame('PELA900101ABA', Customer::find($data['id'])->rfc);
     }
 
     public function test_the_applicant_must_be_an_adult(): void
@@ -232,10 +273,13 @@ class RequestCreditFlowTest extends TestCase
         $owner = $this->userWithRole('Customer');
         $this->approvedLoan($owner);
 
+        // Con otro nombre ya lo frena la CURP; con los mismos datos lo frena el registro existente
         $this->postJson('/request-credit/customer', $this->personal(['name' => 'Atacante', 'email' => 'atacante@example.com']))
+            ->assertStatus(422);
+        $this->postJson('/request-credit/customer', $this->personal(['email' => 'atacante@example.com']))
             ->assertStatus(409);
 
-        $customer = Customer::where('curp', 'PEPA900101MSLRRN01')->first();
+        $customer = Customer::where('curp', 'PELA900101MSLRPN04')->first();
         $this->assertSame('Ana', $customer->name);
         $this->assertSame($owner->email, $customer->email);
     }
@@ -504,7 +548,7 @@ class RequestCreditFlowTest extends TestCase
     {
         foreach ([[2000, 6], [10000, 12]] as [$amount, $term]) {
             $this->flushSession();
-            $data = $this->startRequest(['curp' => $amount === 2000 ? 'PEPA900101MSLRRN01' : 'PEPA900101MSLRRN01']);
+            $data = $this->startRequest(['curp' => $amount === 2000 ? 'PELA900101MSLRPN04' : 'PELA900101MSLRPN04']);
 
             $this->postJson("/request-credit/customer/{$data['id']}/loan", $this->loanPayload(['amount' => $amount, 'term' => $term]))->assertCreated();
         }

@@ -70,9 +70,10 @@ trait BuildsLoans
             'name' => 'Ana',
             'gender' => 'Femenino',
             'last_name' => 'Pérez',
+            'maiden_name' => 'López',
             'email' => $owner->email,
-            'curp' => 'PEPA900101MSLRRN01',
-            'rfc' => 'PEPA900101AB1',
+            'curp' => 'PELA900101MSLRPN04',
+            'rfc' => 'PELA900101ABA',
         ]);
 
         $loan = Loan::create([

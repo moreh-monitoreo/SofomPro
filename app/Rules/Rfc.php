@@ -2,15 +2,21 @@
 
 namespace App\Rules;
 
+use App\Support\MexicanId;
 use Carbon\Carbon;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
 
-/** RFC de persona física (13 posiciones) o moral (12): estructura, fecha válida y coincidencia con el nacimiento. */
+/**
+ * RFC de persona física (13 posiciones) o moral (12): estructura, fecha válida, dígito verificador y,
+ * en personas físicas, coincidencia con el nacimiento y con el nombre capturados.
+ */
 class Rfc implements DataAwareRule, ValidationRule
 {
     private const PATTERN = '/^([A-ZÑ&]{3,4})(\d{2})(\d{2})(\d{2})[A-Z0-9]{3}$/u';
+
+    private const GENERIC = ['XAXX010101000', 'XEXX010101000'];
 
     private array $data = [];
 
@@ -38,10 +44,33 @@ class Rfc implements DataAwareRule, ValidationRule
             return;
         }
 
+        // RFC genéricos del SAT (público en general y extranjeros): no siguen el algoritmo
+        if (in_array($rfc, self::GENERIC, true)) {
+            return;
+        }
+
+        if (MexicanId::rfcCheckDigit(mb_substr($rfc, 0, -1)) !== mb_substr($rfc, -1)) {
+            $fail('El RFC no es válido: revisa que esté completo y bien escrito, incluida la homoclave.');
+
+            return;
+        }
+
         $isPerson = mb_strlen($letters) === 4;
         $birthday = $this->birthday();
         if ($isPerson && $birthday && $birthday->format('ymd') !== $yy.$mm.$dd) {
             $fail('El RFC no coincide con la fecha de nacimiento capturada.');
+
+            return;
+        }
+
+        $paternal = $this->data['last_name'] ?? null;
+        $names = trim(($this->data['name'] ?? '').' '.($this->data['second_name'] ?? ''));
+        if ($isPerson && filled($paternal) && $names !== '') {
+            $expected = MexicanId::rfcInitials($paternal, $this->data['maiden_name'] ?? null, $names);
+            // El SAT admite Ñ o X en las iniciales
+            if (str_replace('Ñ', 'X', $letters) !== str_replace('Ñ', 'X', $expected)) {
+                $fail('El RFC no coincide con el nombre y los apellidos capturados.');
+            }
         }
     }
 

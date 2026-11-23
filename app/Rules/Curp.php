@@ -2,14 +2,15 @@
 
 namespace App\Rules;
 
+use App\Support\MexicanId;
 use Carbon\Carbon;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
- * CURP de 18 posiciones: estructura oficial, fecha de nacimiento válida y, si viene,
- * coincidencia con la fecha de nacimiento y el género capturados.
+ * CURP de 18 posiciones: estructura oficial, fecha de nacimiento válida, dígito verificador y, si vienen,
+ * coincidencia con la fecha de nacimiento, el género, el nombre y los apellidos capturados.
  */
 class Curp implements DataAwareRule, ValidationRule
 {
@@ -56,6 +57,24 @@ class Curp implements DataAwareRule, ValidationRule
         };
         if ($expected && $sex !== 'X' && $sex !== $expected) {
             $fail('La CURP no coincide con el género capturado.');
+
+            return;
+        }
+
+        if (MexicanId::curpCheckDigit(substr($curp, 0, 17)) !== substr($curp, 17)) {
+            $fail('La CURP no es válida: revisa que esté completa y bien escrita.');
+
+            return;
+        }
+
+        $paternal = $this->data['last_name'] ?? null;
+        $names = trim(($this->data['name'] ?? '').' '.($this->data['second_name'] ?? ''));
+        if (filled($paternal) && $names !== '') {
+            $maternal = $this->data['maiden_name'] ?? null;
+            $expectedLetters = MexicanId::curpInitials($paternal, $maternal, $names).MexicanId::curpConsonants($paternal, $maternal, $names);
+            if (substr($curp, 0, 4).substr($curp, 13, 3) !== $expectedLetters) {
+                $fail('La CURP no coincide con el nombre y los apellidos capturados. Escríbelos como aparecen en tu acta de nacimiento.');
+            }
         }
     }
 
