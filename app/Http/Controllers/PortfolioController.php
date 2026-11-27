@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Loans\CreatePaymentPlanAction;
+use App\Actions\Loans\GenerateLoanDocumentsAction;
 use App\Http\Responses\JsonResponse;
+use App\Rules\Clabe;
+use Illuminate\Support\Facades\DB;
 use App\Models\Loan;
 use App\Models\LoanPayment;
 use App\Models\LoanProduct;
 use App\Models\PaymentDetail;
 use App\Services\AuditLogger;
+use App\Services\CreditPolicy;
 use App\Services\LoanCalculator;
 use App\Services\LoanLedger;
 use App\Services\LoanPortfolio;
@@ -125,7 +130,9 @@ class PortfolioController extends Controller
             'term.max' => "El plazo máximo del producto es de {$product->max_term} meses.",
         ]);
 
-        return JsonResponse::success($calculator->simulate((float) $data['amount'], (int) $data['term'], $product), 'ok');
+        return JsonResponse::success($calculator->simulate((float) $data['amount'], (int) $data['term'], $product) + [
+            'policy' => app(CreditPolicy::class)->evaluate($loan, (float) $data['amount'], (int) $data['term']),
+        ], 'ok');
     }
 
     public function startValidation(int $id)
@@ -154,11 +161,15 @@ class PortfolioController extends Controller
         $data = $request->validate([
             'bureau_folio' => 'required|string|max:60',
             'bureau_result' => 'required|string|max:255',
+            'bureau_score' => 'required|integer|min:0|max:999',
             'pld_result' => ['required', Rule::in(array_keys(Loan::PLD_RESULTS))],
             'pld_evidence' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ], [
             'bureau_folio.required' => 'Captura el folio de la consulta a Buró de Crédito.',
             'bureau_result.required' => 'Captura el resultado de la consulta a Buró de Crédito.',
+            'bureau_score.required' => 'Captura la calificación (score) de la consulta a Buró.',
+            'bureau_score.integer' => 'La calificación de Buró debe ser un número entero.',
+            'bureau_score.max' => 'La calificación de Buró no puede ser mayor a 999.',
             'pld_result.required' => 'Indica el resultado del cotejo contra listas (PLD).',
             'pld_evidence.required' => 'Adjunta el comprobante del cotejo PLD.',
             'pld_evidence.mimes' => 'El comprobante debe ser PDF, JPG o PNG.',
@@ -169,11 +180,12 @@ class PortfolioController extends Controller
         $path = Storage::disk(config('filesystems.documents'))
             ->putFileAs("loans/{$loan->id}/validation", $file, 'cotejo-pld-'.now()->format('YmdHis').'.'.$file->extension());
 
-        $before = $loan->only(['bureau_folio', 'bureau_result', 'pld_result', 'validated_by']);
+        $before = $loan->only(['bureau_folio', 'bureau_result', 'bureau_score', 'pld_result', 'validated_by']);
         $loan->forceFill([
             'validation_started_at' => $loan->validation_started_at ?? now(),
             'bureau_folio' => $data['bureau_folio'],
             'bureau_result' => $data['bureau_result'],
+            'bureau_score' => (int) $data['bureau_score'],
             'pld_result' => $data['pld_result'],
             'pld_evidence_path' => $path,
             'validated_at' => now(),
@@ -190,6 +202,7 @@ class PortfolioController extends Controller
         AuditLogger::record('loan.validated', $loan, $loan->id, before: array_filter($before) ?: null, after: [
             'bureau_folio' => $data['bureau_folio'],
             'bureau_result' => $data['bureau_result'],
+            'bureau_score' => (int) $data['bureau_score'],
             'pld_result' => $data['pld_result'],
         ]);
 
@@ -200,18 +213,29 @@ class PortfolioController extends Controller
         return JsonResponse::success(['loan' => $loan->fresh('documentations'), 'missingDocuments' => $loan->missingDocuments()], $message);
     }
 
-    public function disburse(Request $request, int $id)
+    /**
+     * Registra la entrega del crédito con su evidencia (forma, referencia, CLABE si es SPEI y comprobante).
+     * Las cuotas se calculan desde la fecha real del desembolso: si cae en otro mes que el previsto al aprobar,
+     * el plan y la documentación se regeneran para que la primera cuota venza el mes siguiente a la entrega.
+     */
+    public function disburse(Request $request, int $id, CreatePaymentPlanAction $createPlan, GenerateLoanDocumentsAction $generateDocuments)
     {
-        $loan = Loan::with('payment')->findOrFail($id);
+        $loan = Loan::with('payment.details', 'customer')->findOrFail($id);
 
         $data = $request->validate([
             'method' => ['required', Rule::in(array_keys(Loan::DISBURSEMENT_METHODS))],
             'reference' => 'required|string|max:120',
             'disbursed_at' => 'nullable|date|before_or_equal:today',
+            'clabe' => ['nullable', Rule::requiredIf($request->input('method') === 'SPEI'), new Clabe],
+            'receipt' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ], [
             'method.required' => 'Indica la forma de pago del desembolso (SPEI, cheque o efectivo).',
             'reference.required' => 'Captura la referencia del desembolso (clave de rastreo, número de cheque o recibo).',
             'disbursed_at.before_or_equal' => 'La fecha del desembolso no puede ser futura.',
+            'clabe.required' => 'Captura la CLABE a la que se depositó el crédito.',
+            'receipt.required' => 'Adjunta el comprobante del desembolso.',
+            'receipt.mimes' => 'El comprobante debe ser PDF, JPG o PNG.',
+            'receipt.max' => 'El comprobante pesa más de 5 MB.',
         ]);
 
         if ($loan->stage !== 'approved') {
@@ -221,25 +245,72 @@ class PortfolioController extends Controller
             return JsonResponse::error('Primero genera el plan de pagos del préstamo.', 422);
         }
 
-        $loan->forceFill([
-            'disbursed_at' => isset($data['disbursed_at']) ? Carbon::parse($data['disbursed_at'])->setTimeFrom(now()) : now(),
-            'disbursement_method' => $data['method'],
-            'disbursement_reference' => $data['reference'],
-            'disbursed_by' => $request->user()->id,
-        ])->save();
+        $disbursedAt = isset($data['disbursed_at']) ? Carbon::parse($data['disbursed_at'])->setTimeFrom(now()) : now();
+        if ($loan->approved_at && $disbursedAt->copy()->endOfDay()->lt($loan->approved_at)) {
+            return JsonResponse::error('La fecha del desembolso no puede ser anterior a la aprobación.', 422);
+        }
 
         $product = $loan->product();
         $fee = round((float) $loan->amount * $product->opening_fee / 100, 2);
         $net = round((float) $loan->amount - $fee - round($fee * $product->iva / 100, 2), 2);
 
-        AuditLogger::record('loan.disbursed', $loan, $loan->id, after: [
+        $file = $request->file('receipt');
+        $path = Storage::disk(config('filesystems.documents'))
+            ->putFileAs("loans/{$loan->id}/disbursement", $file, 'comprobante-desembolso-'.now()->format('YmdHis').'.'.$file->extension());
+
+        $previousStart = $loan->start_at ? Carbon::parse($loan->start_at)->toDateString() : null;
+        $newStart = $disbursedAt->copy()->addMonthNoOverflow()->firstOfMonth();
+        $hasPayments = $loan->movements()->whereNull('reverted_at')->exists()
+            || $loan->payment->details->where('status', '!=', 'N')->isNotEmpty();
+        $reschedule = $previousStart !== $newStart->toDateString() && ! $hasPayments;
+
+        DB::transaction(function () use ($loan, $data, $disbursedAt, $net, $path, $request, $reschedule, $newStart, $createPlan) {
+            $loan->forceFill([
+                'disbursed_at' => $disbursedAt,
+                'disbursement_method' => $data['method'],
+                'disbursement_reference' => $data['reference'],
+                'disbursement_clabe' => $data['method'] === 'SPEI' ? preg_replace('/\s+/', '', $data['clabe']) : null,
+                'disbursement_receipt_path' => $path,
+                'disbursed_amount' => $net,
+                'disbursed_by' => $request->user()->id,
+            ] + ($reschedule ? ['start_at' => $newStart] : []))->save();
+
+            if ($reschedule) {
+                $createPlan->handle($loan);
+            }
+        });
+
+        $document = $loan->documentations()->create([
+            'name' => 'Comprobante de desembolso',
+            'type' => 'Comprobante de desembolso',
+            'path' => $path,
+            'uploaded_by' => $request->user()->id,
+        ]);
+        AuditLogger::record('document.uploaded', $document, $loan->id, note: $document->name);
+
+        $message = 'Desembolso registrado por $'.number_format($net, 2).' netos.';
+        if ($reschedule) {
+            $message .= ' La primera cuota se recorrió al '.$newStart->format('d/m/Y').'.';
+            try {
+                $generateDocuments->handle($loan->fresh(['customer', 'payment']));
+            } catch (\Throwable $e) {
+                report($e);
+                $message .= ' No se pudo actualizar la documentación; regenérala desde el plan de pagos.';
+            }
+        } elseif ($previousStart !== $newStart->toDateString()) {
+            $message .= ' El plan ya tiene pagos registrados, así que conserva sus fechas.';
+        }
+
+        AuditLogger::record('loan.disbursed', $loan, $loan->id, after: array_filter([
             'disbursed_at' => (string) $loan->fresh()->disbursed_at,
             'method' => $data['method'],
             'reference' => $data['reference'],
+            'clabe' => $loan->disbursement_clabe,
             'net_amount' => $net,
-        ]);
+            'start_at' => $reschedule ? $newStart->toDateString() : null,
+        ], fn ($v) => $v !== null));
 
-        return JsonResponse::success($loan->fresh(), 'Desembolso registrado por $'.number_format($net, 2).' netos.');
+        return JsonResponse::success($loan->fresh('documentations'), $message);
     }
 
     private function detailOf(Loan $loan, int $detailId): PaymentDetail

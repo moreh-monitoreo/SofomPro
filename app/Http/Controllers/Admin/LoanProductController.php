@@ -18,6 +18,7 @@ class LoanProductController extends Controller
             return $product->only([
                 'type', 'name', 'annual_rate', 'opening_fee', 'iva', 'min_amount', 'max_amount', 'amount_step', 'min_term', 'max_term', 'active',
                 'moratory_rate', 'grace_days', 'early_payoff_penalty', 'min_forced_months',
+                'max_debt_ratio', 'min_employment_years', 'min_residence_years', 'min_bureau_score',
             ]) + ['required_documents' => $product->requiredDocuments(), 'updated_at' => $product->updated_at];
         })->values();
 
@@ -48,6 +49,10 @@ class LoanProductController extends Controller
             'grace_days' => 'required|integer|min:0|max:60',
             'early_payoff_penalty' => 'required|numeric|min:0|max:20',
             'min_forced_months' => 'required|integer|min:0|max:60',
+            'max_debt_ratio' => 'required|numeric|min:0|max:100',
+            'min_employment_years' => 'required|integer|min:0|max:50',
+            'min_residence_years' => 'required|integer|min:0|max:50',
+            'min_bureau_score' => 'required|integer|min:0|max:999',
             'required_documents' => 'present|array',
             'required_documents.*' => 'string|max:255|distinct',
         ], [

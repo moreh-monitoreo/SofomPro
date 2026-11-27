@@ -11,6 +11,8 @@ use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\PortfolioController;
 use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\AuthSiteController;
+use App\Http\Controllers\CashController;
+use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\ContactRequestController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LoansController;
@@ -95,6 +97,8 @@ Route::middleware(['auth', 'two-factor', 'role:'.implode('|', User::STAFF_ROLES)
     Route::get('pipeline', [PipelineController::class, 'index'])->name('pipeline.index');
     Route::get('portfolio/overdue', [OverdueController::class, 'index'])->name('portfolio.overdue');
     Route::get('portfolio/overdue/export', [OverdueController::class, 'export'])->name('portfolio.overdue.export');
+    Route::post('loans/{id}/collection', [CollectionController::class, 'store'])->name('loans.collection.store')->whereNumber('id');
+    Route::post('portfolio/overdue/assign', [CollectionController::class, 'assign'])->middleware('role:'.implode('|', User::APPROVER_ROLES))->name('portfolio.overdue.assign');
 
     Route::get('customers/{id}', [CustomerController::class, 'show'])->name('customers.show');
 
@@ -104,6 +108,13 @@ Route::middleware(['auth', 'two-factor', 'role:'.implode('|', User::STAFF_ROLES)
     Route::get('statistics/payments', [StatisticsController::class, 'payments'])->name('statistics.payments');
     Route::get('reports', [ReportController::class, 'index'])->middleware('role:'.implode('|', User::APPROVER_ROLES))->name('reports.index');
     Route::get('reports/aging/export', [ReportController::class, 'exportAging'])->middleware('role:'.implode('|', User::APPROVER_ROLES))->name('reports.aging.export');
+
+    Route::middleware('role:'.implode('|', User::APPROVER_ROLES))->prefix('cash')->name('cash.')->group(function () {
+        Route::get('/', [CashController::class, 'index'])->name('index');
+        Route::get('export', [CashController::class, 'export'])->name('export');
+        Route::post('close', [CashController::class, 'close'])->name('close');
+        Route::post('reconcile', [CashController::class, 'reconcile'])->name('reconcile');
+    });
 
     Route::get('document-types', [DocumentTypeController::class, 'index'])->name('document-types.index');
     Route::post('document-types', [DocumentTypeController::class, 'store'])->name('document-types.store');

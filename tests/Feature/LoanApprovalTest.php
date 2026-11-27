@@ -168,9 +168,94 @@ class LoanApprovalTest extends TestCase
         return array_merge([
             'bureau_folio' => 'BC-778899',
             'bureau_result' => 'Score 680, sin atrasos',
+            'bureau_score' => 680,
             'pld_result' => 'sin_coincidencias',
             'pld_evidence' => \Illuminate\Http\UploadedFile::fake()->create('cotejo.pdf', 50, 'application/pdf'),
         ], $override);
+    }
+
+    // ---- Política de crédito -------------------------------------------------------------------
+
+    public function test_a_request_that_fails_the_credit_policy_needs_a_justification(): void
+    {
+        $loan = $this->pendingLoan();
+        $loan->forceFill(['bureau_score' => 520])->save();
+        $manager = $this->userWithRole('Gerente');
+
+        $this->actingAs($manager)->putJson("/loans/{$loan->id}", ['status' => 'accepted'])
+            ->assertStatus(422)
+            ->assertJsonPath('policy.passes', false)
+            ->assertJsonFragment(['message' => 'La solicitud no cumple la política de crédito (Calificación de Buró). Para aprobarla escribe una justificación de al menos 10 caracteres.']);
+        $this->actingAs($manager)->putJson("/loans/{$loan->id}", ['status' => 'accepted', 'policy_override_reason' => 'Aval'])->assertStatus(422);
+        $this->assertNull($loan->fresh()->approved_at);
+
+        $this->actingAs($manager)->putJson("/loans/{$loan->id}", ['status' => 'accepted', 'policy_override_reason' => 'Cliente con 10 años de relación y aval solidario'])->assertOk();
+
+        $loan->refresh();
+        $this->assertNotNull($loan->approved_at);
+        $this->assertFalse($loan->policy_result['passes']);
+        $this->assertSame('Cliente con 10 años de relación y aval solidario', $loan->policy_override_reason);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'loan.approved', 'loan_id' => $loan->id, 'note' => 'Aprobada sin cumplir la política: Cliente con 10 años de relación y aval solidario']);
+    }
+
+    public function test_a_request_that_meets_the_policy_is_approved_without_justification(): void
+    {
+        $loan = $this->pendingLoan();
+
+        $this->actingAs($this->userWithRole('Gerente'))->putJson("/loans/{$loan->id}", ['status' => 'accepted'])->assertOk();
+
+        $loan->refresh();
+        $this->assertTrue($loan->policy_result['passes']);
+        $this->assertSame(['capacity', 'employment', 'residence', 'bureau'], array_column($loan->policy_result['rules'], 'key'));
+        $this->assertNull($loan->policy_override_reason);
+    }
+
+    public function test_the_policy_checks_capacity_seniority_residence_and_bureau(): void
+    {
+        $loan = $this->pendingLoan();
+        $loan->customer->employment()->update(['monthly_income' => 6000, 'monthly_expenses' => 5500, 'seniority_working' => 0]);
+        $loan->customer->addresses()->update(['years_living' => 0]);
+        $loan->forceFill(['bureau_score' => 610])->save();
+
+        $result = app(\App\Services\CreditPolicy::class)->evaluate($loan->fresh());
+        $rules = collect($result['rules'])->keyBy('key');
+
+        $this->assertFalse($result['passes']);
+        $this->assertFalse($rules['capacity']['passes']);
+        $this->assertStringContainsString('% del ingreso disponible', $rules['capacity']['value']);
+        $this->assertFalse($rules['employment']['passes']);
+        $this->assertFalse($rules['residence']['passes']);
+        $this->assertTrue($rules['bureau']['passes']);
+
+        // Un límite en 0 desactiva la regla
+        \App\Models\LoanProduct::updateOrCreate(['type' => 'NORMAL'], array_merge(\App\Models\LoanProduct::defaults('NORMAL'), [
+            'max_debt_ratio' => 0, 'min_employment_years' => 0, 'min_residence_years' => 0,
+        ]));
+        $result = app(\App\Services\CreditPolicy::class)->evaluate($loan->fresh());
+        $this->assertTrue($result['passes']);
+        $this->assertSame(['bureau'], array_column($result['rules'], 'key'));
+    }
+
+    public function test_the_preview_includes_the_policy_for_the_proposed_conditions(): void
+    {
+        $loan = $this->pendingLoan();
+        // Ingreso disponible de 5,000: 2,000 a 12 meses cabe; 10,000 a 6 meses (cuota de unos 2,200) pasa del 35%
+        $loan->customer->employment()->update(['monthly_income' => 7000, 'monthly_expenses' => 2000]);
+
+        $staff = $this->userWithRole('Gerente');
+        $this->actingAs($staff)->postJson("/loans/{$loan->id}/preview", ['amount' => 2000, 'term' => 12])
+            ->assertOk()->assertJsonPath('data.policy.passes', true);
+        $this->actingAs($staff)->postJson("/loans/{$loan->id}/preview", ['amount' => 10000, 'term' => 6])
+            ->assertOk()->assertJsonPath('data.policy.passes', false);
+    }
+
+    public function test_the_analyst_must_capture_the_bureau_score(): void
+    {
+        $loan = $this->submittedLoan();
+
+        $this->actingAs($this->userWithRole('Analista de crédito'))
+            ->post("/loans/{$loan->id}/validate", $this->validation(['bureau_score' => null]), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('bureau_score');
     }
 
     public function test_an_analyst_validates_with_bureau_and_pld_and_a_manager_approves(): void

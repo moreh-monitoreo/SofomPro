@@ -115,23 +115,54 @@ async function disburse() {
             <select id="disb-method" class="swal2-select" style="width:100%;margin:4px 0 12px">${options}</select>
             <label style="display:block;text-align:left;font-size:14px">Referencia (clave de rastreo, núm. de cheque o recibo)</label>
             <input id="disb-reference" class="swal2-input" maxlength="120" style="width:100%;margin:4px 0 12px">
+            <div id="disb-clabe-box">
+                <label style="display:block;text-align:left;font-size:14px">CLABE destino (18 dígitos)</label>
+                <input id="disb-clabe" class="swal2-input" inputmode="numeric" maxlength="18" style="width:100%;margin:4px 0 12px" value="${props.disbursement.customer_clabe || ''}">
+            </div>
             <label style="display:block;text-align:left;font-size:14px">Fecha del desembolso</label>
-            <input id="disb-date" type="date" class="swal2-input" style="width:100%;margin:4px 0" value="${new Date().toISOString().slice(0, 10)}">`,
+            <input id="disb-date" type="date" class="swal2-input" style="width:100%;margin:4px 0 12px" value="${localToday()}">
+            <label style="display:block;text-align:left;font-size:14px">Comprobante (PDF, JPG o PNG, máx. 5 MB)</label>
+            <input id="disb-receipt" type="file" accept=".pdf,.jpg,.jpeg,.png" class="swal2-file" style="width:100%;margin:4px 0">
+            <p style="font-size:12px;color:#6b7280;margin-top:8px;text-align:left">La primera cuota vence el mes siguiente a la fecha del desembolso; si cambia, el plan de pagos y el contrato se actualizan.</p>`,
         showCancelButton: true,
         confirmButtonColor: '#2ECC71',
         cancelButtonText: 'Cancelar',
         confirmButtonText: 'Registrar',
+        didOpen: () => {
+            const method = document.getElementById('disb-method');
+            const toggle = () => (document.getElementById('disb-clabe-box').style.display = method.value === 'SPEI' ? '' : 'none');
+            method.addEventListener('change', toggle);
+            toggle();
+        },
         preConfirm: () => {
+            const method = document.getElementById('disb-method').value;
             const reference = document.getElementById('disb-reference').value.trim();
+            const clabe = document.getElementById('disb-clabe').value.replace(/\s+/g, '');
+            const receipt = document.getElementById('disb-receipt').files[0];
             if (!reference) {
                 Swal.showValidationMessage('Captura la referencia del desembolso.');
                 return false;
             }
-            return {
-                method: document.getElementById('disb-method').value,
-                reference,
-                disbursed_at: document.getElementById('disb-date').value || null,
-            };
+            if (method === 'SPEI' && !/^\d{18}$/.test(clabe)) {
+                Swal.showValidationMessage('La CLABE debe tener 18 dígitos.');
+                return false;
+            }
+            if (!receipt) {
+                Swal.showValidationMessage('Adjunta el comprobante del desembolso.');
+                return false;
+            }
+            if (receipt.size > 5 * 1024 * 1024) {
+                Swal.showValidationMessage('El comprobante pesa más de 5 MB.');
+                return false;
+            }
+            const form = new FormData();
+            form.append('method', method);
+            form.append('reference', reference);
+            if (method === 'SPEI') form.append('clabe', clabe);
+            const date = document.getElementById('disb-date').value;
+            if (date) form.append('disbursed_at', date);
+            form.append('receipt', receipt);
+            return form;
         },
     });
     if (!result.isConfirmed) return;
@@ -139,16 +170,26 @@ async function disburse() {
     try {
         const { data } = await axios.post(route('loans.disburse', loan.value.id), result.value);
         loan.value = { ...loan.value, ...data.data };
-        toast.success(data.message);
+        toast.success(data.message, { timeout: 8000 });
     } catch (error) {
-        toast.error(error.response?.data?.message || 'No se pudo registrar el desembolso.');
+        const errors = error.response?.data?.errors;
+        toast.error((errors && Object.values(errors)[0]?.[0]) || error.response?.data?.message || 'No se pudo registrar el desembolso.');
     }
 }
+
+// Fecha de hoy en la zona del navegador (toISOString usaría UTC y de noche daría el día siguiente)
+function localToday() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const disbursementReceipt = computed(() => (loan.value.documentations || []).filter((d) => d.type === 'Comprobante de desembolso').at(-1));
 
 // ---- Validación: Buró de Crédito y cotejo PLD (analista) ---------------------------------
 const validation = ref({
     bureau_folio: loan.value.bureau_folio || '',
     bureau_result: loan.value.bureau_result || '',
+    bureau_score: loan.value.bureau_score ?? '',
     pld_result: loan.value.pld_result || 'sin_coincidencias',
     pld_evidence: null,
 });
@@ -273,12 +314,23 @@ async function rejectLoan() {
 }
 
 async function validateLoan() {
+    const failsPolicy = preview.value?.policy && !preview.value.policy.passes;
+    const conditions = changedConditions.value
+        ? `Se aprobará ${money(approval.value.amount)} a ${approval.value.term} meses (el cliente pidió ${money(loan.value.amount)} a ${loan.value.term} meses).`
+        : 'La solicitud será aceptada y se avisará al solicitante.';
+    const failed = failsPolicy ? preview.value.policy.rules.filter((r) => !r.passes).map((r) => r.label).join(', ') : '';
     const result = await Swal.fire({
         title: '¿Estás seguro?',
-        text: changedConditions.value
-            ? `Se aprobará ${money(approval.value.amount)} a ${approval.value.term} meses (el cliente pidió ${money(loan.value.amount)} a ${loan.value.term} meses).`
-            : 'La solicitud será aceptada y se avisará al solicitante',
+        text: failsPolicy ? `${conditions} No cumple la política de crédito (${failed}): escribe por qué se aprueba de todos modos.` : conditions,
         icon: 'warning',
+        ...(failsPolicy
+            ? {
+                  input: 'textarea',
+                  inputPlaceholder: 'Justificación (mínimo 10 caracteres)',
+                  inputAttributes: { maxlength: 500 },
+                  inputValidator: (value) => (!value || value.trim().length < 10 ? 'Escribe una justificación de al menos 10 caracteres.' : undefined),
+              }
+            : {}),
         showCancelButton: true,
         confirmButtonColor: '#2ECC71',
         cancelButtonColor: '#d33',
@@ -291,6 +343,7 @@ async function validateLoan() {
                 status: 'accepted',
                 amount: approval.value.amount,
                 term: approval.value.term,
+                policy_override_reason: failsPolicy ? result.value.trim() : null,
             });
             toast.success(response.data.message);
             router.visit(route('loans.index'));
@@ -384,6 +437,10 @@ async function updateDocuments() {
                                 <span v-if="loan.reject_reason" class="text-sm text-red-700">Motivo del rechazo: {{ loan.reject_reason }}</span>
                                 <span v-if="loan.disbursement_method" class="text-sm text-gray-600">
                                     Desembolso: {{ disbursement.methods[loan.disbursement_method] ?? loan.disbursement_method }} · ref. {{ loan.disbursement_reference }}
+                                    <template v-if="loan.disbursed_amount"> · {{ money(loan.disbursed_amount) }} netos</template>
+                                    <template v-if="loan.disbursed_at"> · {{ new Date(loan.disbursed_at).toLocaleDateString('es-MX') }}</template>
+                                    <template v-if="loan.disbursement_clabe"> · CLABE {{ loan.disbursement_clabe }}</template>
+                                    <a v-if="disbursementReceipt" :href="route('loans.documents.show', [loan.id, disbursementReceipt.id])" target="_blank" class="ml-1 text-blue-600 underline">comprobante</a>
                                 </span>
                                 <span v-if="loan.stage === 'incomplete'" class="text-sm text-orange-700">El cliente aún no termina su solicitud (faltan sus documentos).</span>
                             </div>
@@ -902,6 +959,7 @@ async function updateDocuments() {
                                         <dl v-if="loan.validated_at" class="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm md:grid-cols-2">
                                             <div><dt class="inline text-gray-500">Folio de Buró:</dt> <dd class="inline font-medium">{{ loan.bureau_folio }}</dd></div>
                                             <div><dt class="inline text-gray-500">Resultado:</dt> <dd class="inline font-medium">{{ loan.bureau_result }}</dd></div>
+                                            <div><dt class="inline text-gray-500">Calificación de Buró:</dt> <dd class="inline font-medium">{{ loan.bureau_score ?? 'Sin capturar' }}</dd></div>
                                             <div>
                                                 <dt class="inline text-gray-500">Cotejo PLD:</dt>
                                                 <dd :class="['inline font-medium', loan.pld_result === 'sin_coincidencias' ? 'text-green-700' : 'text-red-700']">{{ pldResults[loan.pld_result] }}</dd>
@@ -923,6 +981,11 @@ async function updateDocuments() {
                                                 <label for="bureau-result" class="mb-1 block text-sm font-medium text-gray-900">Resultado de Buró</label>
                                                 <input id="bureau-result" v-model="validation.bureau_result" type="text" maxlength="255" placeholder="Ej. score 680, sin atrasos" class="block w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
                                                 <p v-if="validationErrors.bureau_result" class="mt-1 text-sm text-red-600">{{ validationErrors.bureau_result }}</p>
+                                            </div>
+                                            <div>
+                                                <label for="bureau-score" class="mb-1 block text-sm font-medium text-gray-900">Calificación (score) de Buró</label>
+                                                <input id="bureau-score" v-model.number="validation.bureau_score" type="number" min="0" max="999" step="1" class="block w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900" />
+                                                <p v-if="validationErrors.bureau_score" class="mt-1 text-sm text-red-600">{{ validationErrors.bureau_score }}</p>
                                             </div>
                                             <div>
                                                 <label for="pld-result" class="mb-1 block text-sm font-medium text-gray-900">Cotejo contra listas (PLD)</label>
@@ -999,6 +1062,33 @@ async function updateDocuments() {
                                             <p class="mt-1">{{ capacity.text }}</p>
                                             <p v-if="capacity.withoutExpenses" class="mt-1 text-xs">Este expediente no tiene egresos capturados; el cálculo usa solo los ingresos.</p>
                                         </div>
+
+                                        <div v-if="preview?.policy?.rules?.length" :class="['mt-4 rounded-lg border p-3 text-sm', preview.policy.passes ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50']">
+                                            <p class="font-semibold text-gray-900">
+                                                Política de crédito: {{ preview.policy.passes ? 'cumple' : 'no cumple' }}
+                                            </p>
+                                            <ul class="mt-2 space-y-1">
+                                                <li v-for="rule in preview.policy.rules" :key="rule.key" class="flex flex-wrap gap-x-2">
+                                                    <span :class="rule.passes ? 'text-green-700' : 'text-red-700'" aria-hidden="true">{{ rule.passes ? '✓' : '✗' }}</span>
+                                                    <span class="font-medium text-gray-900">{{ rule.label }}:</span>
+                                                    <span class="text-gray-800">{{ rule.value }}</span>
+                                                    <span class="text-gray-500">({{ rule.limit }})</span>
+                                                    <span class="sr-only">{{ rule.passes ? 'cumple' : 'no cumple' }}</span>
+                                                </li>
+                                            </ul>
+                                            <p v-if="!preview.policy.passes" class="mt-2 text-red-800">Para aprobar sin cumplir la política tendrás que escribir una justificación; quedará en la bitácora.</p>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="processed && loan.policy_result?.rules?.length" class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
+                                        <h6 class="text-base font-semibold text-gray-900">Política de crédito al aprobar: {{ loan.policy_result.passes ? 'cumplía' : 'no cumplía' }}</h6>
+                                        <ul class="mt-2 space-y-1">
+                                            <li v-for="rule in loan.policy_result.rules" :key="rule.key">
+                                                <span :class="rule.passes ? 'text-green-700' : 'text-red-700'">{{ rule.passes ? '✓' : '✗' }}</span>
+                                                <span class="font-medium"> {{ rule.label }}:</span> {{ rule.value }} <span class="text-gray-500">({{ rule.limit }})</span>
+                                            </li>
+                                        </ul>
+                                        <p v-if="loan.policy_override_reason" class="mt-2 text-gray-800"><span class="font-medium">Justificación:</span> {{ loan.policy_override_reason }}</p>
                                     </div>
 
                                     <p v-if="!processed && can.approve && !loan.validated_at" class="text-sm text-gray-600">

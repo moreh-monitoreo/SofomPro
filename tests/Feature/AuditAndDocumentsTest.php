@@ -106,7 +106,7 @@ class AuditAndDocumentsTest extends TestCase
         $approved = AuditLog::where('action', 'loan.approved')->firstOrFail();
         $this->assertSame($admin->id, $approved->user_id);
         $this->assertSame($loan->id, $approved->loan_id);
-        $this->assertEquals(['amount' => 2000, 'term' => 9], $approved->after);
+        $this->assertEquals(['amount' => 2000, 'term' => 9, 'policy_passes' => true], $approved->after);
 
         $changed = AuditLog::where('action', 'loan.conditions_changed')->firstOrFail();
         $this->assertEquals(['amount' => 3000, 'term' => 6], $changed->before);

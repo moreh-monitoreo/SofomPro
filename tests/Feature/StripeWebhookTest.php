@@ -69,6 +69,33 @@ class StripeWebhookTest extends TestCase
         $this->assertNotNull($detail->payed_at);
     }
 
+    public function test_a_stripe_payment_is_audited_and_keeps_the_stripe_fee(): void
+    {
+        $this->app->instance(\App\Services\StripeFees::class, new class extends \App\Services\StripeFees
+        {
+            public function forPaymentIntent(string $paymentIntentId): ?array
+            {
+                return $paymentIntentId === 'pi_test_123' ? ['fee' => 46.38, 'net' => 1185.83] : null;
+            }
+        });
+        ['loan' => $loan, 'details' => $details] = $this->approvedLoan();
+        [$payload, $server] = $this->signed($this->paidEvent($details->first()));
+
+        $this->sendWebhook($payload, $server)->assertOk();
+
+        $movement = \App\Models\LoanPayment::where('loan_id', $loan->id)->firstOrFail();
+        $this->assertSame(46.38, $movement->processor_fee);
+        $this->assertSame(1185.83, $movement->processor_net);
+        $audit = \App\Models\AuditLog::where('action', 'payment.registered')->where('loan_id', $loan->id)->firstOrFail();
+        $this->assertNull($audit->user_id);
+        $this->assertSame('STRIPE', $audit->after['method']);
+        $this->assertStringContainsString('cs_test_123', $audit->note);
+
+        // Un reenvío del evento no duplica el registro en la bitácora
+        $this->sendWebhook($payload, $server)->assertOk();
+        $this->assertSame(1, \App\Models\AuditLog::where('action', 'payment.registered')->count());
+    }
+
     public function test_replaying_the_same_event_does_not_change_the_payment(): void
     {
         $detail = $this->approvedLoan()['details']->first();

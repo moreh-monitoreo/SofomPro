@@ -10,6 +10,8 @@ use App\Services\LoanPortfolio;
 use App\Services\PaymentRegistrar;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use Tests\Concerns\BuildsLoans;
 use Tests\TestCase;
@@ -427,7 +429,7 @@ class PortfolioTest extends TestCase
         $loan = $built['loan'];
         $staff = $this->userWithRole('Advisor');
         $manager = $this->userWithRole('Gerente');
-        $disbursement = ['method' => 'SPEI', 'reference' => 'RASTREO-123'];
+        $disbursement = $this->disbursement();
 
         $this->actingAs($staff)->postJson("/loans/{$loan->id}/validation")->assertStatus(409);
 
@@ -438,13 +440,13 @@ class PortfolioTest extends TestCase
         $this->actingAs($staff)->postJson("/loans/{$loan->id}/validation")->assertOk();
         $this->assertSame('in_validation', $loan->fresh()->stage);
 
-        $this->actingAs($manager)->postJson("/loans/{$loan->id}/disburse", $disbursement)->assertStatus(409);
+        $this->actingAs($manager)->post("/loans/{$loan->id}/disburse", $disbursement, ['Accept' => 'application/json'])->assertStatus(409);
 
         $loan->forceFill(['approved_at' => now()])->save();
-        $this->actingAs($staff)->postJson("/loans/{$loan->id}/disburse", $disbursement)->assertForbidden();
-        $this->actingAs($manager)->postJson("/loans/{$loan->id}/disburse", ['method' => 'SPEI'])->assertStatus(422)->assertJsonValidationErrors('reference');
-        $this->actingAs($manager)->postJson("/loans/{$loan->id}/disburse", ['method' => 'TARJETA', 'reference' => 'X'])->assertStatus(422)->assertJsonValidationErrors('method');
-        $this->actingAs($manager)->postJson("/loans/{$loan->id}/disburse", $disbursement)->assertOk();
+        $this->actingAs($staff)->post("/loans/{$loan->id}/disburse", $disbursement, ['Accept' => 'application/json'])->assertForbidden();
+        $this->actingAs($manager)->post("/loans/{$loan->id}/disburse", $this->disbursement(['reference' => null]), ['Accept' => 'application/json'])->assertStatus(422)->assertJsonValidationErrors('reference');
+        $this->actingAs($manager)->post("/loans/{$loan->id}/disburse", $this->disbursement(['method' => 'TARJETA']), ['Accept' => 'application/json'])->assertStatus(422)->assertJsonValidationErrors('method');
+        $this->actingAs($manager)->post("/loans/{$loan->id}/disburse", $disbursement, ['Accept' => 'application/json'])->assertOk();
 
         $loan->refresh();
         $this->assertSame('disbursed', $loan->stage);
@@ -452,7 +454,7 @@ class PortfolioTest extends TestCase
         $this->assertSame('RASTREO-123', $loan->disbursement_reference);
         $this->assertSame($manager->id, $loan->disbursed_by);
 
-        $this->actingAs($manager)->postJson("/loans/{$loan->id}/disburse", $disbursement)->assertStatus(409);
+        $this->actingAs($manager)->post("/loans/{$loan->id}/disburse", $disbursement, ['Accept' => 'application/json'])->assertStatus(409);
     }
 
     public function test_disbursing_requires_a_saved_payment_plan(): void
@@ -462,8 +464,101 @@ class PortfolioTest extends TestCase
         $built['payment']->delete();
 
         $this->actingAs($this->userWithRole('Gerente'))
-            ->postJson("/loans/{$built['loan']->id}/disburse", ['method' => 'EFECTIVO', 'reference' => 'REC-1'])
+            ->post("/loans/{$built['loan']->id}/disburse", $this->disbursement(['method' => 'EFECTIVO', 'clabe' => null]), ['Accept' => 'application/json'])
             ->assertStatus(422);
+    }
+
+    public function test_disbursing_requires_a_receipt_and_a_valid_clabe_for_spei(): void
+    {
+        ['loan' => $loan] = $this->approvedLoan();
+        $manager = $this->userWithRole('Gerente');
+        $url = "/loans/{$loan->id}/disburse";
+
+        $this->actingAs($manager)->post($url, $this->disbursement(['receipt' => null]), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('receipt');
+        $this->actingAs($manager)->post($url, $this->disbursement(['clabe' => null]), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('clabe');
+        $this->actingAs($manager)->post($url, $this->disbursement(['clabe' => '002010077777777770']), ['Accept' => 'application/json'])
+            ->assertStatus(422)->assertJsonValidationErrors('clabe');
+        $this->actingAs($manager)->post($url, $this->disbursement(['disbursed_at' => '2026-09-01']), ['Accept' => 'application/json'])
+            ->assertStatus(422);
+        $this->assertNull($loan->fresh()->disbursed_at);
+
+        // En efectivo no se pide CLABE, pero el comprobante sí
+        $this->actingAs($manager)->post($url, $this->disbursement(['method' => 'EFECTIVO', 'clabe' => null]), ['Accept' => 'application/json'])
+            ->assertOk();
+
+        $loan->refresh();
+        $product = $loan->product();
+        $fee = round(3000 * $product->opening_fee / 100, 2);
+        $this->assertSame(round(3000 - $fee - round($fee * $product->iva / 100, 2), 2), (float) $loan->disbursed_amount);
+        $this->assertNull($loan->disbursement_clabe);
+        Storage::disk(config('filesystems.documents'))->assertExists($loan->disbursement_receipt_path);
+        $this->assertSame($loan->disbursement_receipt_path, $loan->documentations()->where('type', 'Comprobante de desembolso')->value('path'));
+        $this->assertDatabaseHas('audit_logs', ['action' => 'loan.disbursed', 'loan_id' => $loan->id]);
+    }
+
+    public function test_a_spei_disbursement_keeps_the_clabe(): void
+    {
+        ['loan' => $loan] = $this->approvedLoan();
+
+        $this->actingAs($this->userWithRole('Gerente'))
+            ->post("/loans/{$loan->id}/disburse", $this->disbursement(), ['Accept' => 'application/json'])
+            ->assertOk();
+
+        $this->assertSame($this->validClabe(), $loan->fresh()->disbursement_clabe);
+    }
+
+    public function test_the_first_installment_moves_to_the_month_after_the_disbursement(): void
+    {
+        // Aprobado en septiembre (primera cuota el 1 de septiembre en el plan original) y desembolsado el 21 de octubre
+        ['loan' => $loan] = $this->approvedLoan();
+
+        $this->actingAs($this->userWithRole('Gerente'))
+            ->post("/loans/{$loan->id}/disburse", $this->disbursement(), ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('message', fn ($m) => str_contains($m, '01/11/2026'));
+
+        $loan->refresh()->load('payment.details');
+        $this->assertSame('2026-11-01', Carbon::parse($loan->start_at)->toDateString());
+        $this->assertSame(
+            ['2026-11-01', '2026-12-01', '2027-01-01'],
+            $loan->payment->details->sortBy('number')->map(fn ($d) => Carbon::parse($d->due_date)->toDateString())->values()->all(),
+        );
+    }
+
+    public function test_the_plan_keeps_its_dates_when_it_already_has_payments(): void
+    {
+        ['loan' => $loan, 'details' => $details] = $this->approvedLoan();
+        $details[0]->update(['status' => 'S', 'payed_at' => now()]);
+        $dates = $details->map(fn ($d) => Carbon::parse($d->fresh()->due_date)->toDateString())->all();
+
+        $this->actingAs($this->userWithRole('Gerente'))
+            ->post("/loans/{$loan->id}/disburse", $this->disbursement(), ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('message', fn ($m) => str_contains($m, 'conserva sus fechas'));
+
+        $this->assertSame($dates, $loan->fresh('payment.details')->payment->details->sortBy('number')->map(fn ($d) => Carbon::parse($d->due_date)->toDateString())->values()->all());
+    }
+
+    private function validClabe(): string
+    {
+        return '00201007777777777'.\App\Rules\Clabe::checkDigit('00201007777777777');
+    }
+
+    /** Datos de un desembolso por SPEI con comprobante; cada llave se puede reemplazar (null la quita). */
+    private function disbursement(array $overrides = []): array
+    {
+        Storage::fake(config('filesystems.documents'));
+
+        $data = array_merge([
+            'method' => 'SPEI',
+            'reference' => 'RASTREO-123',
+            'clabe' => $this->validClabe(),
+            'receipt' => UploadedFile::fake()->create('comprobante.pdf', 50, 'application/pdf'),
+        ], $overrides);
+
+        return array_filter($data, fn ($v) => $v !== null);
     }
 
     // ---- Pagos generales, liquidación y plan automático (HTTP) -----------------------------

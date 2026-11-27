@@ -6,9 +6,11 @@ use App\Actions\Loans\CreateCustomerAccountAction;
 use App\Actions\Loans\CreatePaymentPlanAction;
 use App\Actions\Loans\GenerateLoanDocumentsAction;
 use App\Services\MorehContractService;
+use App\Models\CollectionAction;
 use App\Models\Loan;
 use App\Models\LoanProduct;
 use App\Services\AuditLogger;
+use App\Services\CreditPolicy;
 use App\Services\LoanPortfolio;
 use App\Models\User;
 use Carbon\Carbon;
@@ -61,6 +63,8 @@ class LoansController extends Controller
                 'methods' => Loan::DISBURSEMENT_METHODS,
                 'opening_fee' => round((float) $loan->amount * $product->opening_fee / 100, 2),
                 'opening_fee_iva' => round((float) $loan->amount * $product->opening_fee / 100 * $product->iva / 100, 2),
+                // La CLABE que el cliente dio en su solicitud, para precargar el desembolso por SPEI
+                'customer_clabe' => $loan->customer?->clabe,
             ],
             'pldResults' => Loan::PLD_RESULTS,
             'can' => [
@@ -102,11 +106,12 @@ class LoansController extends Controller
         return new JsonResponse(['message' => "Se envió la invitación a {$loan->customer->email}"]);
     }
 
-    public function update(Request $request, $id, CreateCustomerAccountAction $createAccount, GenerateLoanDocumentsAction $generateDocuments, CreatePaymentPlanAction $createPlan)
+    public function update(Request $request, $id, CreateCustomerAccountAction $createAccount, GenerateLoanDocumentsAction $generateDocuments, CreatePaymentPlanAction $createPlan, CreditPolicy $creditPolicy)
     {
         $request->validate([
             'status' => 'required|in:accepted,rejected',
             'reason' => 'nullable|string|max:500',
+            'policy_override_reason' => 'nullable|string|max:500',
         ]);
 
         $loan = Loan::with('customer')->findOrFail($id);
@@ -155,6 +160,22 @@ class LoansController extends Controller
             'term.max' => "El plazo máximo del producto es de {$product->max_term} meses.",
         ]);
 
+        // Política de crédito con las condiciones que se van a aprobar; si no se cumple, se exige justificación
+        $policy = $creditPolicy->evaluate(
+            $loan,
+            $request->filled('amount') ? (float) $request->amount : null,
+            $request->filled('term') ? (int) $request->term : null,
+        );
+        $overrideReason = trim((string) $request->input('policy_override_reason', ''));
+        if (! $policy['passes'] && mb_strlen($overrideReason) < 10) {
+            $failed = collect($policy['rules'])->where('passes', false)->pluck('label')->implode(', ');
+
+            return new JsonResponse([
+                'message' => "La solicitud no cumple la política de crédito ({$failed}). Para aprobarla escribe una justificación de al menos 10 caracteres.",
+                'policy' => $policy,
+            ], 422);
+        }
+
         if (! $loan->customer?->email) {
             return new JsonResponse(['message' => 'El cliente no tiene correo registrado para crear su cuenta'], 422);
         }
@@ -169,9 +190,11 @@ class LoansController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($loan, $createAccount, $generateDocuments, $createPlan, $adjustments, $user) {
+            DB::transaction(function () use ($loan, $createAccount, $generateDocuments, $createPlan, $adjustments, $user, $policy, $overrideReason) {
                 $loan->update([
                     'approved_at' => now(),
+                    'policy_result' => $policy,
+                    'policy_override_reason' => $policy['passes'] ? null : $overrideReason,
                     'start_at' => Carbon::now()->addMonth()->firstOfMonth(),
                     'approved_by' => $user->id,
                     // Lo que pidió el cliente se conserva aunque se apruebe otra cosa
@@ -186,7 +209,7 @@ class LoansController extends Controller
             });
 
             $after = ['amount' => (float) $loan->fresh()->amount, 'term' => (int) $loan->fresh()->term];
-            AuditLogger::record('loan.approved', $loan, $loan->id, after: $after);
+            AuditLogger::record('loan.approved', $loan, $loan->id, after: $after + ['policy_passes' => $policy['passes']], note: $policy['passes'] ? null : 'Aprobada sin cumplir la política: '.$overrideReason);
             if ($adjustments) {
                 AuditLogger::record('loan.conditions_changed', $loan, $loan->id, before: $before, after: $after);
             }
@@ -234,6 +257,14 @@ class LoansController extends Controller
             'isAdmin' => $user->hasRole('Administrator'),
             'canGeneratePlan' => $user->hasAnyRole(User::APPROVER_ROLES),
             'message' => session('message'),
+            'collection' => [
+                'actions' => $loan->collectionActions()->with('user:id,name')->latest('id')->get()->map(fn ($a) => CollectionController::present($a)),
+                'collector' => $loan->collector?->only('id', 'name'),
+                'channels' => CollectionAction::CHANNELS,
+                'outcomes' => CollectionAction::OUTCOMES,
+                'promiseStatuses' => CollectionAction::PROMISE_STATUSES,
+                'canRecord' => CollectionController::canRecord($user, $loan),
+            ],
         ]);
     }
 

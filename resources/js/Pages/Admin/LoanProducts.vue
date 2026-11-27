@@ -29,6 +29,10 @@ const forms = props.products.map((product) =>
         grace_days: product.grace_days,
         early_payoff_penalty: product.early_payoff_penalty,
         min_forced_months: product.min_forced_months,
+        max_debt_ratio: product.max_debt_ratio,
+        min_employment_years: product.min_employment_years,
+        min_residence_years: product.min_residence_years,
+        min_bureau_score: product.min_bureau_score,
         required_documents: [...product.required_documents],
     }),
 );
@@ -46,6 +50,10 @@ const fields = [
     { key: 'grace_days', label: 'Días de gracia antes de mora', step: '1' },
     { key: 'early_payoff_penalty', label: 'Penalización por liquidar antes (%)', step: '0.01' },
     { key: 'min_forced_months', label: 'Meses forzosos (0 = sin penalización)', step: '1' },
+    { key: 'max_debt_ratio', label: 'Política: cuota máxima del ingreso disponible (%) (0 = sin regla)', step: '0.01' },
+    { key: 'min_employment_years', label: 'Política: años mínimos en el empleo (0 = sin regla)', step: '1' },
+    { key: 'min_residence_years', label: 'Política: años mínimos en el domicilio (0 = sin regla)', step: '1' },
+    { key: 'min_bureau_score', label: 'Política: calificación mínima de Buró (0 = sin regla)', step: '1' },
 ];
 
 const save = (form) => {

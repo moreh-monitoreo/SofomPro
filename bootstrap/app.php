@@ -21,6 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Stripe firma sus webhooks; no puede mandar token CSRF
         $middleware->validateCsrfTokens(except: ['stripe/webhook']);
 
+        // Tareas diarias (recordatorios de pago, promesas, reporte de vencidos) disparadas por la primera visita del día
+        $middleware->append(\App\Http\Middleware\RunDailyTasksWhenDue::class);
+
         $middleware->web(append: [
             \App\Http\Middleware\EnsureUserIsActive::class,
             \App\Http\Middleware\HandleInertiaRequests::class,

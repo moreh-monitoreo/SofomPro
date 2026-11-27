@@ -14,7 +14,7 @@ class User extends Authenticatable
     use HasFactory, Notifiable, HasRoles;
 
     /** Roles del equipo: entran al panel interno y deben usar verificación en dos pasos. */
-    public const STAFF_ROLES = ['Administrator', 'Advisor', 'Analista de crédito', 'Gerente'];
+    public const STAFF_ROLES = ['Administrator', 'Advisor', 'Analista de crédito', 'Gerente', 'Gestor de cobranza'];
 
     /** Nombre en español y qué puede hacer cada rol del equipo (para la pantalla de usuarios). */
     public const ROLE_LABELS = [
@@ -22,7 +22,14 @@ class User extends Authenticatable
         'Gerente' => ['label' => 'Gerente', 'description' => 'Aprueba o rechaza solicitudes, registra desembolsos y consulta reportes.'],
         'Analista de crédito' => ['label' => 'Analista de crédito', 'description' => 'Captura Buró y PLD y da por validadas las solicitudes.'],
         'Advisor' => ['label' => 'Asesor', 'description' => 'Consulta expedientes, sube documentos y registra pagos.'],
+        'Gestor de cobranza' => ['label' => 'Gestor de cobranza', 'description' => 'Da seguimiento a la cartera vencida que tiene asignada: registra llamadas, visitas y promesas de pago.'],
     ];
+
+    /** Quién puede registrar gestiones en cualquier préstamo; el gestor de cobranza solo en los que tiene asignados. */
+    public const COLLECTION_ROLES = ['Administrator', 'Gerente', 'Advisor'];
+
+    /** A quién se le puede asignar la cobranza de un préstamo. */
+    public const COLLECTOR_ROLES = ['Gestor de cobranza', 'Advisor', 'Gerente', 'Administrator'];
 
     /** Quién captura Buró y PLD y da por validada una solicitud. */
     public const VALIDATOR_ROLES = ['Administrator', 'Analista de crédito'];

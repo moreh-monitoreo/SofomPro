@@ -53,10 +53,29 @@ trait BuildsLoans
             'validated_by' => $analyst->id,
             'bureau_folio' => 'BC-0001',
             'bureau_result' => 'Sin atrasos',
+            'bureau_score' => 700,
             'pld_result' => 'sin_coincidencias',
         ])->save();
 
+        $this->meetsCreditPolicy($loan->customer);
+
         return $loan;
+    }
+
+    /** Empleo y domicilio que cumplen la política por defecto: ingreso holgado y 3 años en cada uno. */
+    protected function meetsCreditPolicy(Customer $customer, array $employment = [], array $address = []): void
+    {
+        if (! $customer->employment()->exists()) {
+            $customer->employment()->create($employment + [
+                'type' => 'Empleado', 'area' => 'Servicios', 'main_activity' => 'Comercio',
+                'seniority_working' => 3, 'monthly_income' => 20000, 'other_income' => 0, 'monthly_expenses' => 8000,
+            ]);
+        }
+        if (! $customer->addresses()->exists()) {
+            $customer->addresses()->create($address + [
+                'street' => 'Insurgentes', 'outdoor_number' => '10', 'postal_code' => '80000', 'years_living' => 3, 'type' => 'Propiedad',
+            ]);
+        }
     }
 
     /** Préstamo aprobado con plan de 3 cuotas de $1,160.00 y su cliente con cuenta de acceso. */

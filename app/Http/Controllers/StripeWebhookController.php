@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\LoanPayment;
 use App\Models\Log;
 use App\Models\PaymentDetail;
+use App\Services\AuditLogger;
 use App\Services\PaymentRegistrar;
+use App\Services\StripeFees;
 use Illuminate\Http\Request;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Webhook;
@@ -76,7 +79,32 @@ class StripeWebhookController extends Controller
 
         if ($registered) {
             $this->log($eventId, 'ok', ['payment_detail_id' => $detail->id, 'session' => $session->id]);
+            $this->recordMovement($detail, (string) ($session->payment_intent ?? $session->id), $session->id);
         }
+    }
+
+    /** Comisión de Stripe para la conciliación y registro en la bitácora, como los pagos capturados por el equipo. */
+    private function recordMovement(PaymentDetail $detail, string $reference, string $sessionId): void
+    {
+        $movement = LoanPayment::where('loan_id', $detail->payment->loan_id)
+            ->where('method', 'STRIPE')->where('reference', $reference)->whereNull('reverted_at')
+            ->latest('id')->first();
+        if (! $movement) {
+            return;
+        }
+
+        if ($fees = app(StripeFees::class)->forPaymentIntent($reference)) {
+            $movement->forceFill(['processor_fee' => $fees['fee'], 'processor_net' => $fees['net']])->save();
+        }
+
+        AuditLogger::record('payment.registered', $movement, $movement->loan_id, after: [
+            'kind' => $movement->kind,
+            'method' => 'STRIPE',
+            'reference' => $reference,
+            'amount' => $movement->amount,
+            'processor_fee' => $movement->processor_fee,
+            'allocations' => $movement->allocations,
+        ], note: "Pago en línea con tarjeta (sesión {$sessionId})");
     }
 
     private function log(string $eventId, string $status, array $data): void

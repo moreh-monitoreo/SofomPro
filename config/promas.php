@@ -29,6 +29,14 @@ return [
     // Días de gracia después del vencimiento antes de considerar una cuota en mora
     'overdue_grace_days' => (int) env('OVERDUE_GRACE_DAYS', 0),
 
+    // Días antes del vencimiento en que se manda el recordatorio de pago al cliente (además del aviso el mismo día)
+    'reminder_days_before' => (int) env('PAYMENT_REMINDER_DAYS_BEFORE', 3),
+
+    // Las tareas diarias las dispara la primera visita al sitio después de esta hora (zona de APP_TIMEZONE),
+    // sin necesidad de un cron en el servidor. Apagado en local para no mandar correos reales desde una máquina de desarrollo
+    'daily_tasks_on_requests' => (bool) env('DAILY_TASKS_ON_REQUESTS', ! in_array(env('APP_ENV'), ['local', 'testing'], true)),
+    'daily_tasks_at' => env('DAILY_TASKS_AT', '09:00'),
+
     // Verificación en dos pasos obligatoria para las cuentas del equipo (ver User::STAFF_ROLES)
     'two_factor_required' => (bool) env('TWO_FACTOR_REQUIRED', true),
 

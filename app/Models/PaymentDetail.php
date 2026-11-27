@@ -76,4 +76,10 @@ class PaymentDetail extends Model
     {
         return $this->belongsTo(Payment::class);
     }
+
+    /** Recordatorios de pago ya enviados para esta cuota. */
+    public function reminders()
+    {
+        return $this->hasMany(PaymentReminderLog::class);
+    }
 }

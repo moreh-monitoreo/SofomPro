@@ -17,6 +17,7 @@ import {
     ShieldCheck,
     Users,
     BarChart3,
+    Wallet,
 } from 'lucide-vue-next';
 import { usePage } from '@inertiajs/vue3';
 import { hasAccess } from '@/lib/auth';
@@ -59,7 +60,7 @@ const page = usePage();
             </SidebarMenuItem>
         </SidebarMenu>
 
-        <template v-if="hasAccess(['Administrator', 'Advisor', 'Analista de crédito', 'Gerente'], page.props.auth.roles)">
+        <template v-if="hasAccess(['Administrator', 'Advisor', 'Analista de crédito', 'Gerente', 'Gestor de cobranza'], page.props.auth.roles)">
             <SidebarGroupLabel>Agente</SidebarGroupLabel>
             <SidebarMenu>
                 <SidebarMenuItem>
@@ -110,6 +111,12 @@ const page = usePage();
                         <a :href="route('reports.index')">
                             <BarChart3 />
                             <span>Reportes</span>
+                        </a>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton v-if="hasAccess(['Administrator', 'Gerente'], page.props.auth.roles)" as-child>
+                        <a :href="route('cash.index')">
+                            <Wallet />
+                            <span>Corte de caja</span>
                         </a>
                     </SidebarMenuButton>
                 </SidebarMenuItem>

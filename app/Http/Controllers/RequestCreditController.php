@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Actions\IncrementScore;
 use App\Http\Middleware\EnsureRequestCreditOwner;
 use App\Http\Responses\JsonResponse;
 use App\Models\Customer;
@@ -14,7 +13,6 @@ use App\Rules\Clabe;
 use App\Rules\Curp;
 use App\Rules\Rfc;
 use App\Services\AuditLogger;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -87,7 +85,7 @@ class RequestCreditController extends Controller
         return JsonResponse::success($customer, $status->name, 201);
     }
 
-    public function addaddress(Request $request, Customer $customer, IncrementScore $incrementScore)
+    public function addaddress(Request $request, Customer $customer)
     {
         // Letras, dígitos, guiones, diagonal y espacios: 12-A, 4B, S/N, Depto 3
         $number = ['regex:/^[\pL\pN\s\-\/.#]+$/u', 'max:20'];
@@ -125,14 +123,10 @@ class RequestCreditController extends Controller
         $customer->save();
         $customer->status = $status;
 
-        $loanId = $this->pendingLoanId($customer);
-        $incrementScore->handle($loanId, 'live_time', $request->years_living);
-        $incrementScore->handle($loanId, 'home_type', $request->type);
-
         return JsonResponse::success($customer, $status->name, 201);
     }
 
-    public function updatecustomer(Request $request, Customer $customer, IncrementScore $incrementScore)
+    public function updatecustomer(Request $request, Customer $customer)
     {
         $status = Status::where('name', $request->civil_status ? 'PROFILE COMPLETED' : 'PROFILE 2 REGISTERED')->firstOrFail();
 
@@ -146,23 +140,12 @@ class RequestCreditController extends Controller
             )
         );
 
-        $loanId = $this->pendingLoanId($customer);
-        if($status->name == 'PROFILE COMPLETED') {
-            $incrementScore->handle($loanId, 'civil_status', $request->civil_status);
-            $incrementScore->handle($loanId, 'car_status', $request->own_car);
-            $incrementScore->handle($loanId, 'economic_dependents', $request->economic_dependents);
-        } else {
-            $age = Carbon::parse($customer->birthday)->age;
-
-            $incrementScore->handle($loanId, 'age', $age);
-        }
-
         $customer->status = $status;
 
         return JsonResponse::success($customer, $status->name);
     }
 
-    public function createemployment(Request $request, Customer $customer, IncrementScore $incrementScore)
+    public function createemployment(Request $request, Customer $customer)
     {
         $request->validate([
             'type' => 'required|string|max:255',
@@ -210,14 +193,10 @@ class RequestCreditController extends Controller
         $customer->save();
         $customer->status = $status;
 
-        $loanId = $this->pendingLoanId($customer);
-        $incrementScore->handle($loanId, 'employment_situation', $request->type);
-        $incrementScore->handle($loanId, 'sector', $request->area);
-
         return JsonResponse::success($customer, $status->name, 201);
     }
 
-    public function updateemployment(Request $request, Customer $customer, IncrementScore $incrementScore)
+    public function updateemployment(Request $request, Customer $customer)
     {
         $request->validate([
             'monthly_income' => 'nullable|numeric|min:0',
@@ -235,17 +214,10 @@ class RequestCreditController extends Controller
         $customer->save();
         $customer->status = $status;
 
-        $loanId = $this->pendingLoanId($customer);
-        $incrementScore->handle($loanId, 'seniority', $request->seniority_working);
-        $incrementScore->handle($loanId, 'social_security', $request->imss);
-        $incrementScore->handle($loanId, 'sgmm', $request->insurance_major_medical_expenses);
-        $incrementScore->handle($loanId, 'salary', $request->monthly_income);
-        $incrementScore->handle($loanId, 'another_salary', $request->other_income);
-
         return JsonResponse::success($customer, $status->name);
     }
 
-    public function storeloan(Request $request, Customer $customer, IncrementScore $incrementScore)
+    public function storeloan(Request $request, Customer $customer)
     {
         // El producto se define igual que al guardar: con garantía solo si trae folio del plan funerario
         $type = $request->type === 'FUNERARIO' && $request->policy_folio ? 'FUNERARIO' : 'NORMAL';
@@ -302,8 +274,6 @@ class RequestCreditController extends Controller
         $customer->status_id = $status->id;
         $customer->save();
 
-        $incrementScore->handle($loan->id, 'months', $request->term);
-        $incrementScore->handle($loan->id, 'purpose', $request->purpose);
 
         return JsonResponse::success($loan, $status->name, 201);
     }
@@ -386,14 +356,5 @@ class RequestCreditController extends Controller
         }
 
         return JsonResponse::success(['documents' => $saved], 'DOCUMENTS UPLOADED', 201);
-    }
-
-    private function pendingLoanId(Customer $customer): ?int
-    {
-        return Loan::where('customer_id', $customer->id)
-            ->whereNull('approved_at')
-            ->whereNull('reject_at')
-            ->latest('id')
-            ->value('id');
     }
 }

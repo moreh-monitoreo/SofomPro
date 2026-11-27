@@ -1,4 +1,5 @@
 <script setup>
+import CollectionLog from '@/Components/payments/CollectionLog.vue';
 import PaymentsLedger from '@/Components/payments/PaymentsLedger.vue';
 import DashboardLayout from '@/Layouts/DashboardLayout.vue';
 import { Head, router } from '@inertiajs/vue3';
@@ -15,6 +16,7 @@ const props = defineProps({
     product: { type: Object, default: () => ({}) },
     isAdmin: { type: Boolean, default: false },
     canGeneratePlan: { type: Boolean, default: false },
+    collection: { type: Object, default: null },
 });
 const toast = useToast();
 const generating = ref(false);
@@ -98,6 +100,8 @@ async function generatePlan() {
                         :is-admin="isAdmin"
                     ></PaymentsLedger>
                 </div>
+
+                <CollectionLog v-if="collection && loan.approved_at" :loan-id="loan.id" :collection="collection" />
             </div>
         </div>
     </DashboardLayout>

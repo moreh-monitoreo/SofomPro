@@ -17,7 +17,7 @@ class LoanProduct extends Model
     /** Documentos que el cliente sube en su solicitud; son los obligatorios por defecto para aprobar. */
     public const DEFAULT_DOCUMENTS = ['INE (frente)', 'INE (reverso)', 'Comprobante de domicilio', 'Estado de cuenta bancario'];
 
-    protected $fillable = ['type', 'name', 'annual_rate', 'opening_fee', 'iva', 'min_amount', 'max_amount', 'amount_step', 'min_term', 'max_term', 'active', 'moratory_rate', 'grace_days', 'early_payoff_penalty', 'min_forced_months', 'required_documents'];
+    protected $fillable = ['type', 'name', 'annual_rate', 'opening_fee', 'iva', 'min_amount', 'max_amount', 'amount_step', 'min_term', 'max_term', 'active', 'moratory_rate', 'grace_days', 'early_payoff_penalty', 'min_forced_months', 'required_documents', 'max_debt_ratio', 'min_employment_years', 'min_residence_years', 'min_bureau_score'];
 
     protected $casts = [
         'annual_rate' => 'float',
@@ -34,6 +34,10 @@ class LoanProduct extends Model
         'early_payoff_penalty' => 'float',
         'min_forced_months' => 'integer',
         'required_documents' => 'array',
+        'max_debt_ratio' => 'float',
+        'min_employment_years' => 'integer',
+        'min_residence_years' => 'integer',
+        'min_bureau_score' => 'integer',
     ];
 
     public static function defaults(string $type): array
@@ -57,6 +61,10 @@ class LoanProduct extends Model
             'early_payoff_penalty' => 3.0,
             'min_forced_months' => 0,
             'required_documents' => self::DEFAULT_DOCUMENTS,
+            'max_debt_ratio' => 35.0,
+            'min_employment_years' => 1,
+            'min_residence_years' => 1,
+            'min_bureau_score' => 600,
         ];
     }
 

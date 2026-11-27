@@ -62,7 +62,7 @@ class PaymentRegistrar
             throw new InvalidArgumentException('El importe debe ser mayor a cero.');
         }
 
-        return DB::transaction(function () use ($loan, $amount, $method, $reference, $paidAt, $registeredBy, $notes, $kind) {
+        $movement = DB::transaction(function () use ($loan, $amount, $method, $reference, $paidAt, $registeredBy, $notes, $kind) {
             $payment = Payment::lockForUpdate()->where('loan_id', $loan->id)->first();
             if (! $payment) {
                 throw new InvalidArgumentException('El préstamo no tiene plan de pagos.');
@@ -152,6 +152,11 @@ class PaymentRegistrar
 
             return $movement;
         });
+
+        // Una promesa de pago se da por cumplida en cuanto entra el pago (las incumplidas las revisa el comando diario)
+        app(CollectionService::class)->resolvePromises($loan->id, markBroken: false);
+
+        return $movement;
     }
 
     /**
@@ -199,6 +204,9 @@ class PaymentRegistrar
             }
             if ($movement->method === 'STRIPE') {
                 throw new InvalidArgumentException('Un pago con tarjeta no se puede revertir aquí; devuélvelo desde Stripe.');
+            }
+            if ($movement->reconciled_at) {
+                throw new InvalidArgumentException('Ese pago ya está conciliado con el banco; no se puede revertir.');
             }
             $latest = LoanPayment::where('loan_id', $movement->loan_id)->whereNull('reverted_at')->latest('id')->first();
             if ($latest && $latest->id !== $movement->id) {

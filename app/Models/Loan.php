@@ -11,7 +11,7 @@ class Loan extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['type', 'policy_folio', 'folio', 'customer_id', 'amount', 'purpose', 'purpose_description', 'term', 'score', 'approved_at', 'reject_at', 'start_at', 'paid_at', 'validation_started_at', 'disbursed_at', 'requested_amount', 'requested_term', 'approved_by', 'reject_reason', 'submitted_at', 'bureau_folio', 'bureau_result', 'pld_result', 'pld_evidence_path', 'validated_at', 'validated_by', 'disbursement_method', 'disbursement_reference', 'disbursed_by'];
+    protected $fillable = ['type', 'policy_folio', 'folio', 'customer_id', 'amount', 'purpose', 'purpose_description', 'term', 'score', 'approved_at', 'reject_at', 'start_at', 'paid_at', 'validation_started_at', 'disbursed_at', 'requested_amount', 'requested_term', 'approved_by', 'reject_reason', 'submitted_at', 'bureau_folio', 'bureau_result', 'pld_result', 'pld_evidence_path', 'validated_at', 'validated_by', 'disbursement_method', 'disbursement_reference', 'disbursed_by', 'disbursed_amount', 'disbursement_clabe', 'disbursement_receipt_path', 'bureau_score', 'policy_result', 'policy_override_reason', 'collector_id'];
 
     public const STAGES = [
         'incomplete' => 'Incompleta',
@@ -50,6 +50,10 @@ class Loan extends Model
     protected $appends = ['status', 'stage', 'stage_label'];
 
     protected $hidden = ['score'];
+
+    protected $casts = [
+        'policy_result' => 'array',
+    ];
 
     /** Etapa del flujo de la solicitud, calculada a partir de sus fechas. */
     public function getStageAttribute(): string
@@ -139,6 +143,17 @@ class Loan extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** Gestor de cobranza asignado. */
+    public function collector()
+    {
+        return $this->belongsTo(User::class, 'collector_id');
+    }
+
+    public function collectionActions()
+    {
+        return $this->hasMany(CollectionAction::class);
     }
 
     public function payment()

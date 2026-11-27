@@ -28,6 +28,10 @@ class LoanProductsAdminTest extends TestCase
             'grace_days' => 0,
             'early_payoff_penalty' => 3,
             'min_forced_months' => 0,
+            'max_debt_ratio' => 35,
+            'min_employment_years' => 1,
+            'min_residence_years' => 1,
+            'min_bureau_score' => 600,
             'required_documents' => ['INE (frente)', 'INE (reverso)'],
         ], $override);
     }
